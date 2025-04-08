@@ -85,22 +85,17 @@ WSGI_APPLICATION = "asset_library.wsgi.application"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(
-       default=os.getenv('DATABASE_URL', 'mysql://root:WTPBphRmLRjqtSUGAJxePWROnMGyCwOI@shuttle.proxy.rlwy.net:40562/railway'),
-       conn_max_age=600,
-    )
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.mysql',
-    #     'NAME': 'assets',
-    #     'USER': 'admin',
-    #     'PASSWORD': 'terskayl',
-    #     'HOST': 'localhost',
-    #     'PORT': '3306',
-    #     'OPTIONS': {
-    #         'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-    #         'charset': 'utf8mb4',
-    #     },
-    # }
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.environ.get("MYSQLDATABASE", "railway"),
+        'USER': os.environ.get("MYSQLUSER", "root"),
+        'PASSWORD': os.environ.get("MYSQLPASSWORD", config("MYSQLPASSWORD")),
+        'HOST': os.environ.get("MYSQLHOST", config("MYSQLHOST")),
+        'PORT': os.environ.get("MYSQLPORT", config("MYSQLPORT")),
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
+    }
 }
 
 # DATABASES['default']['ENGINE'] = 'mysql.connector.django'
