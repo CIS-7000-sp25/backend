@@ -1,0 +1,118 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ asset.asset_name }}</title>
+    <link rel="stylesheet" href="{% static 'styles.css' %}">
+    <script src="{% static 'bundle.js' %}"></script>
+</head>
+<body>
+    <div class="container">
+        <a href="{% url 'home' %}" class="back-button">← Back</a>
+        <div class="asset-detail-grid">
+            <!-- Left Panel -->
+            <div class="asset-info-section">
+                <h1 class="asset-title">{{ asset.assetName }}</h1>
+
+                <div class="asset-tags">
+                    {% for keyword in asset.keywordsList.all %}
+                        <span class="tag">{{ keyword.keyword }}</span>
+                    {% endfor %}
+                </div>
+
+                <div class="texture-status">
+                    Has texture?
+                    <span class="tag">{% if keyword.hasTexture %}Yes{% else %}No{% endif %}</span>
+                </div>
+
+                <p>Created: <strong>{{ commits.last.timestamp|date:"F jS, Y" }}</strong> by <strong>{{ commits.last.author }}</strong></p>
+                <p>Last Modified: <strong>{{ commits.first.timestamp|date:"F jS, Y" }}</strong> by <strong>{{ commits.first.author }}</strong></p>
+
+                <div class="history-box">
+                    <h3>Asset History</h3>
+                    {% for commit in commits %}
+                        <div class="commit-entry">
+                            <p><strong>Version:</strong> {{ commit.version }}</p>
+                            <p><strong>Author:</strong> {{ commit.author }}</p>
+                            <p><strong>Asset {% if commit == commits.last %}Created{% else %}Updated{% endif %}:</strong> {{ commit.timestamp|date:"F jS, Y" }}</p>
+                            <p><strong>Note:</strong> {{ commit.note }}</p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="asset-preview-section">
+                <img src="{{ thumbnail }}" alt="{{ asset.assetName }}" class="thumbnail-img">
+                <div class="button-group">
+                    <form method="get" action="{% url 'download_asset_by_name' asset.assetName %}">
+                        <button class="primary-btn" type="submit">Download</button>
+                    </form>
+                    <button class="secondary-btn" id="updateAsset">Update</button>
+                    <button class="secondary-btn" id="showViewerButton">View</button>
+                </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Form (Modal) -->
+    <div id="updateAssetForm" class="modal update-modal">
+        <h2 class="modal-title">Update {{ asset.assetName }} Metadata</h2>
+        <form method="post" action="{% url 'home' %}">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="version">Version:</label>
+                <input type="text" id="version" name="version" required>
+            </div>
+    
+            <div class="form-group">
+                <label for="date">Date:</label>
+                <input type="date" id="date" name="date" required>
+            </div>
+    
+            <div class="form-group">
+                <label for="keywords">Keywords:</label>
+                <div class="asset-tags">
+                    {% for keyword in asset.keywordsList.all %}
+                        <span class="tag">{{ keyword.keyword }}</span>
+                    {% endfor %}
+                </div>
+                <input type="text" id="keywords" name="keywords" placeholder="Add new keywords (comma separated)">
+            </div>
+            
+    
+            <div class="form-group">
+                <label for="note">Note:</label>
+                <textarea id="note" name="note" placeholder="Describe any edits made to asset"></textarea>
+            </div>
+    
+            <div class="form-buttons">
+                <button id="updateAssetCancel" class="secondary-btn">Cancel</button>
+                <button type="submit" class="primary-btn">Submit Update</button>
+            </div>
+        </form>
+    </div>
+    
+
+    <!-- GLB Viewer Overlay -->
+    <div id="glb-viewer-container" style="display: none; position: fixed; top: 30px; left: 30px; width: 95%; height: 90%; background: rgba(0,0,0,0.85); z-index: 1000;">
+        <input type="hidden" id="glb-url-holder" value={{glb}} />
+        <button id="closeViewerButton" style="position: absolute; top: 20px; right: 20px; padding: 10px 20px; background: white; border: none; border-radius: 10px; cursor: pointer;">Close</button>
+    </div>
+
+    <script>
+        document.getElementById('updateAsset').addEventListener('click', () => {
+            document.getElementById('updateAssetForm').style.display = 'block';
+        });
+    
+        document.getElementById('updateAssetCancel').addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('updateAssetForm').style.display = 'none';
+        });
+
+    </script>    
+</body>
+</html>
