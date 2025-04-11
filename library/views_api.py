@@ -11,8 +11,19 @@ from django.utils import timezone
 from django.db.models import OuterRef, Subquery, Prefetch
 import os
 
+import time
+from django.db import connection
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.db.models import Q, OuterRef, Subquery, Prefetch
+# import other necessary modules/models (Asset, Commit, S3Manager, etc.)
+
 @api_view(['GET'])
 def get_assets(request):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
         # Get query parameters
         search = request.GET.get('search')
@@ -21,7 +32,6 @@ def get_assets(request):
         sort_by = request.GET.get('sortBy', 'updated')
 
         # Base queryset
-        # 1) select_related('checkedOutBy') to avoid an extra query for each asset's checkedOutBy user.
         assets = Asset.objects.all().select_related('checkedOutBy')
 
         # Subquery references for earliest and latest commits
@@ -75,7 +85,7 @@ def get_assets(request):
                 'commits',
                 queryset=Commit.objects
                     .order_by('timestamp')
-                    .select_related('author')      
+                    .select_related('author')
                     .prefetch_related('sublayers'),
                 to_attr='all_commits'
             ),
@@ -113,7 +123,6 @@ def get_assets(request):
                         f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
                         if latest_commit and latest_commit.author else "Unknown"
                     ),
-                    # Thanks to select_related('checkedOutBy'), we won't trigger a new query here:
                     'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
                     'isCheckedOut': asset.checkedOutBy is not None,
                     'materials': materials,
@@ -132,6 +141,21 @@ def get_assets(request):
     except Exception as e:
         print(f"Error in get_assets: {str(e)}")
         return Response({'error': str(e)}, status=500)
+
+    finally:
+        # -------------------------------
+        # Performance logging
+        # -------------------------------
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_assets took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )
     
 @api_view(['GET'])
 def get_asset(request, asset_name):
