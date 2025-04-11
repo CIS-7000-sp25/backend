@@ -11,6 +11,8 @@ from django.utils import timezone
 from django.db.models import OuterRef, Subquery
 import os
 
+# from tests import UsdTest
+
 @api_view(['GET'])
 def get_assets(request):
     try:
@@ -149,6 +151,10 @@ def post_asset(request, asset_name):
     try:
         # On the frontend, we should first check if metadata exists
         # Metadata upload is a separate POST 
+
+        # tester = UsdTest({})
+        # if not tester.checkBoundingBox():
+        #     return Response({'message': 'Usd test failed'}, status=400)
 
         if Asset.objects.get(assetName=asset_name):
             return Response({'error': 'Asset already exists'}, status=400)

@@ -31,3 +31,4 @@ tzdata==2025.2
 urllib3>=1.26.20, <=2.3.0
 zstandard==0.23.0
 djangorestframework==3.16.0
+usd-core==25.2.post1
