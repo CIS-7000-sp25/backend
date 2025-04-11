@@ -69,11 +69,14 @@ def get_assets(request):
         elif sort_by == 'created':
             assets = assets.order_by('-first_ts')
 
-        # Prefetch commits & sublayers and keywords (already from prior optimizations)
+        # Prefetch commits & sublayers and keywords
         assets = assets.prefetch_related(
             Prefetch(
                 'commits',
-                queryset=Commit.objects.order_by('timestamp').prefetch_related('sublayers'),
+                queryset=Commit.objects
+                    .order_by('timestamp')
+                    .select_related('author')      
+                    .prefetch_related('sublayers'),
                 to_attr='all_commits'
             ),
             'keywordsList'
@@ -110,7 +113,7 @@ def get_assets(request):
                         f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
                         if latest_commit and latest_commit.author else "Unknown"
                     ),
-                    # Thanks to select_related, we won't trigger a new query here:
+                    # Thanks to select_related('checkedOutBy'), we won't trigger a new query here:
                     'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
                     'isCheckedOut': asset.checkedOutBy is not None,
                     'materials': materials,
