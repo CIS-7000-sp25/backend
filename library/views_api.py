@@ -21,7 +21,8 @@ def get_assets(request):
         sort_by = request.GET.get('sortBy', 'updated')
 
         # Base queryset
-        assets = Asset.objects.all()
+        # 1) select_related('checkedOutBy') to avoid an extra query for each asset's checkedOutBy user.
+        assets = Asset.objects.all().select_related('checkedOutBy')
 
         # Subquery references for earliest and latest commits
         earliest_commit = Commit.objects.filter(asset=OuterRef('pk')).order_by('timestamp')
@@ -68,9 +69,7 @@ def get_assets(request):
         elif sort_by == 'created':
             assets = assets.order_by('-first_ts')
 
-        # --- PREFETCH COMMITS & KEYWORDS TO AVOID REPEATED QUERIES ---
-        # We'll store the prefetched commits (ordered by timestamp) in `asset.all_commits`
-        # and the keyword objects in memory to avoid extra queries per asset.
+        # Prefetch commits & sublayers and keywords (already from prior optimizations)
         assets = assets.prefetch_related(
             Prefetch(
                 'commits',
@@ -86,25 +85,32 @@ def get_assets(request):
         for asset in assets:
             try:
                 # Get first and latest commits from the prefetched 'all_commits' list
-                all_commits = asset.all_commits  # Prefetched commit list
+                all_commits = asset.all_commits
                 first_commit = all_commits[0] if all_commits else None
                 latest_commit = all_commits[-1] if all_commits else None
 
-                # Check for sublayers in the latest commit
-                # (Since we prefetched 'sublayers', no new query is needed)
-                materials = latest_commit.sublayers.exists() if latest_commit else False
+                # Check sublayers in-memory, no extra query
+                materials = bool(latest_commit.sublayers.all()) if latest_commit else False
 
                 # Generate the thumbnail URL if needed
-                thumbnail_url = s3Manager.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+                thumbnail_url = (
+                    s3Manager.generate_presigned_url(asset.thumbnailKey)
+                    if asset.thumbnailKey else None
+                )
 
                 assets_list.append({
                     'name': asset.assetName,
                     'thumbnailUrl': thumbnail_url,
                     'version': latest_commit.version if latest_commit else "01.00.00",
-                    'creator': (f"{first_commit.author.firstName} {first_commit.author.lastName}"
-                                if first_commit and first_commit.author else "Unknown"),
-                    'lastModifiedBy': (f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
-                                       if latest_commit and latest_commit.author else "Unknown"),
+                    'creator': (
+                        f"{first_commit.author.firstName} {first_commit.author.lastName}"
+                        if first_commit and first_commit.author else "Unknown"
+                    ),
+                    'lastModifiedBy': (
+                        f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
+                        if latest_commit and latest_commit.author else "Unknown"
+                    ),
+                    # Thanks to select_related, we won't trigger a new query here:
                     'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
                     'isCheckedOut': asset.checkedOutBy is not None,
                     'materials': materials,
@@ -113,6 +119,7 @@ def get_assets(request):
                     'createdAt': first_commit.timestamp.isoformat() if first_commit else None,
                     'updatedAt': latest_commit.timestamp.isoformat() if latest_commit else None,
                 })
+
             except Exception as e:
                 print(f"Error processing asset {asset.assetName}: {str(e)}")
                 continue
