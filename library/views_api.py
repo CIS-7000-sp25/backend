@@ -15,6 +15,8 @@ from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
 
 
+# from tests import UsdTest
+
 @api_view(['GET'])
 def get_assets(request):
     # Start the timer and capture initial query count
@@ -240,6 +242,10 @@ def post_asset(request, asset_name):
     try:
         # On the frontend, we should first check if metadata exists
         # Metadata upload is a separate POST 
+
+        # tester = UsdTest({})
+        # if not tester.checkBoundingBox():
+        #     return Response({'message': 'Usd test failed'}, status=400)
 
         if Asset.objects.get(assetName=asset_name):
             return Response({'error': 'Asset already exists'}, status=400)
