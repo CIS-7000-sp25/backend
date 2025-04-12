@@ -4,7 +4,7 @@ from django.shortcuts import redirect
 from django.http import HttpResponse
 from django.http import StreamingHttpResponse
 from django .template import loader
-from .models import Asset, Commit, AssetVersion, Keyword
+from .models import Asset, Commit, Sublayer, Keyword
 from django.db.models import Q;
 from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
@@ -39,7 +39,7 @@ def asset_detail(request, asset_name):
     asset = Asset.objects.prefetch_related('keywordsList').get(assetName=asset_name)
     template = loader.get_template('asset_detail.html')
     commits = Commit.objects.filter(asset=asset).order_by('-timestamp')
-    versions = AssetVersion.objects.filter(asset=asset).order_by('-versionName')
+    versions = Sublayer.objects.filter(asset=asset).order_by('-sublayerName')
     s3 = S3Manager()
     thumbnail = s3.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
     glbKey = f"{asset_name}/{asset_name}.glb"

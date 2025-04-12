@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 from django.http import StreamingHttpResponse
 from django.db.models import Q, Max, Min
-from .models import Asset, Author, Commit, AssetVersion, Keyword
+from .models import Asset, Author, Commit, Sublayer, Keyword
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .utils.s3_utils import S3Manager 
@@ -196,7 +196,6 @@ def put_asset(request, asset_name):
 #   asset_name - A string as the name of the asset
 #   metadata - a JSON containing relevant metadata information
 #   metadata 
-#   - assetStructureVersion (string)
 #   - hasTexture (bool)    
 #   - keywords (list of keyword strings)
 #   - commit (Object contianing below)
@@ -217,7 +216,6 @@ def post_metadata(request, asset_name):
         asset = Asset(
             id = uuid.uuid4(),
             assetName = asset_name,
-            assetStructureVersion = metadata["assetStructureVersion"],
             hasTexture = metadata["hasTexture"],
             thumbnailKey = f"{asset_name}/thumbnail.png"
         )
@@ -250,9 +248,9 @@ def post_metadata(request, asset_name):
         }
         
         for version, key in versions:
-            asset_version = AssetVersion(
+            asset_version = Sublayer(
                 id = uuid.uuid4(), 
-                versionName = version, 
+                sublayerName = version, 
                 filepath = key, 
                 asset = asset)
             asset_version.save()
@@ -289,19 +287,19 @@ def put_metadata(request, asset_name, new_version):
         version_map = metadata['version_map'] # I don't think this is right
 
         for key, s3_id in version_map:
-            versionName = None
+            sublayerName = None
 
             if key[-4:] == ".usda":
-                versionName = "Variant Set"
+                sublayerName = "Variant Set"
                 tags = key[-9:-4]
                 if tags in {"_LOD0", "_LOD1", "_LOD2"}:
-                    versionName = tags[1:]
+                    sublayerName = tags[1:]
 
-            version_update = AssetVersion(
+            version_update = Sublayer(
                 id = uuid.uuid4(),
                 filepath = key,
                 s3id = s3_id,
-                versionName = versionName,
+                sublayerName = sublayerName,
                 version = new_version,
                 asset = db_asset
             )
@@ -467,7 +465,7 @@ def get_commit(request, commit_id):
             'sublayers': [
                 {
                     'id': str(layer.id),
-                    'versionName': layer.versionName,
+                    'sublayerName': layer.sublayerName,
                     'filepath': str(layer.filepath)
                 } for layer in commit.sublayers.all()
             ]
