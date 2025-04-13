@@ -10,7 +10,6 @@ from .utils.zipper import zip_files_from_memory
 from django.utils import timezone
 from django.db.models import OuterRef, Subquery, Prefetch
 import os
-
 import time
 from django.db import connection
 from rest_framework.decorators import api_view
@@ -156,7 +155,7 @@ def get_assets(request):
             f"[PERF DEBUG] get_assets took {elapsed_seconds:.4f} seconds "
             f"and used {queries_used} DB queries."
         )
-    
+
 @api_view(['GET'])
 def get_asset(request, asset_name):
     # Start the timer and capture initial query count
@@ -164,34 +163,40 @@ def get_asset(request, asset_name):
     initial_query_count = len(connection.queries)
 
     try:
-        # 1) Get the asset by name, including the related 'checkedOutBy' user in one query
+        # Prefetch ALL commits (with author and sublayers) in one shot
         asset = (
             Asset.objects
                  .select_related('checkedOutBy')
+                 .prefetch_related(
+                     'keywordsList',
+                     Prefetch(
+                         'commits',
+                         queryset=Commit.objects
+                                        .select_related('author')
+                                        .prefetch_related('sublayers'),
+                         to_attr='all_commits'  # store them in memory under this attribute
+                     )
+                 )
                  .get(assetName=asset_name)
         )
 
-        # 2) Get latest commit, fetching the 'author' relation in the same query
-        latest_commit = (
-            asset.commits
-                 .select_related('author')  # Pull the author in one go
-                 .order_by('-timestamp')
-                 .first()
-        )
+        # `asset.all_commits` is now a list of Commit objects in memory
+        all_commits = asset.all_commits
 
-        # 3) Get the first commit, also with 'author'
-        first_commit = (
-            asset.commits
-                 .select_related('author')
-                 .order_by('timestamp')
-                 .first()
-        )
+        # Derive first and latest from that list
+        if all_commits:
+            first_commit = min(all_commits, key=lambda c: c.timestamp)
+            latest_commit = max(all_commits, key=lambda c: c.timestamp)
+        else:
+            first_commit = None
+            latest_commit = None
 
-        # 4) Generate the S3 thumbnail URL if it exists
         s3Manager = S3Manager()
-        thumbnail_url = s3Manager.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+        thumbnail_url = (
+            s3Manager.generate_presigned_url(asset.thumbnailKey)
+            if asset.thumbnailKey else None
+        )
 
-        # 5) Build the response data
         asset_data = {
             'name': asset.assetName,
             'thumbnailUrl': thumbnail_url,
@@ -206,7 +211,8 @@ def get_asset(request, asset_name):
             ),
             'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
             'isCheckedOut': asset.checkedOutBy is not None,
-            'materials': latest_commit.sublayers.exists() if latest_commit else False,
+            # Because the commits & sublayers are already prefetched, no extra DB calls here
+            'materials': bool(latest_commit and latest_commit.sublayers.all()),
             'keywords': [k.keyword for k in asset.keywordsList.all()],
             'description': latest_commit.note if latest_commit else "No description available",
             'createdAt': first_commit.timestamp.isoformat() if first_commit else None,
@@ -230,7 +236,7 @@ def get_asset(request, asset_name):
             f"[PERF DEBUG] get_asset took {elapsed_seconds:.4f} seconds "
             f"and used {queries_used} DB queries."
         )
-        
+
 @api_view(['POST'])
 def post_asset(request, asset_name):
     try:
