@@ -164,24 +164,46 @@ def get_asset(request, asset_name):
     initial_query_count = len(connection.queries)
 
     try:
-        # Get the asset by name
-        asset = Asset.objects.get(assetName=asset_name)
-        
-        # Get latest and first commits
-        latest_commit = asset.commits.order_by('-timestamp').first()
-        first_commit = asset.commits.order_by('timestamp').first()
+        # 1) Get the asset by name, including the related 'checkedOutBy' user in one query
+        asset = (
+            Asset.objects
+                 .select_related('checkedOutBy')
+                 .get(assetName=asset_name)
+        )
 
-        # Generate S3 URLs
+        # 2) Get latest commit, fetching the 'author' relation in the same query
+        latest_commit = (
+            asset.commits
+                 .select_related('author')  # Pull the author in one go
+                 .order_by('-timestamp')
+                 .first()
+        )
+
+        # 3) Get the first commit, also with 'author'
+        first_commit = (
+            asset.commits
+                 .select_related('author')
+                 .order_by('timestamp')
+                 .first()
+        )
+
+        # 4) Generate the S3 thumbnail URL if it exists
         s3Manager = S3Manager()
         thumbnail_url = s3Manager.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
 
-        # Format the response to match frontend's AssetWithDetails interface
+        # 5) Build the response data
         asset_data = {
             'name': asset.assetName,
-            'thumbnailUrl': thumbnail_url,  # You'll need to handle S3 URL generation
+            'thumbnailUrl': thumbnail_url,
             'version': latest_commit.version if latest_commit else "01.00.00",
-            'creator': f"{first_commit.author.firstName} {first_commit.author.lastName}" if first_commit and first_commit.author else "Unknown",
-            'lastModifiedBy': f"{latest_commit.author.firstName} {latest_commit.author.lastName}" if latest_commit and latest_commit.author else "Unknown",
+            'creator': (
+                f"{first_commit.author.firstName} {first_commit.author.lastName}"
+                if first_commit and first_commit.author else "Unknown"
+            ),
+            'lastModifiedBy': (
+                f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
+                if latest_commit and latest_commit.author else "Unknown"
+            ),
             'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
             'isCheckedOut': asset.checkedOutBy is not None,
             'materials': latest_commit.sublayers.exists() if latest_commit else False,
@@ -198,12 +220,9 @@ def get_asset(request, asset_name):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
     finally:
-        # -------------------------------
         # Performance logging
-        # -------------------------------
         end_time = time.perf_counter()
         elapsed_seconds = end_time - start_time
-
         final_query_count = len(connection.queries)
         queries_used = final_query_count - initial_query_count
 
@@ -211,7 +230,7 @@ def get_asset(request, asset_name):
             f"[PERF DEBUG] get_asset took {elapsed_seconds:.4f} seconds "
             f"and used {queries_used} DB queries."
         )
-
+        
 @api_view(['POST'])
 def post_asset(request, asset_name):
     try:
