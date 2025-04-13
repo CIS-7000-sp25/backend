@@ -143,54 +143,6 @@ def get_asset(request, asset_name):
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-    
-@api_view(['POST'])
-def post_asset(request, asset_name):
-    try:
-        # On the frontend, we should first check if metadata exists
-        # Metadata upload is a separate POST 
-
-        if Asset.objects.get(assetName=asset_name):
-            return Response({'error': 'Asset already exists'}, status=400)
-
-        files = request.FILES.getlist('files')
-        if not files:
-            return Response({'error': 'Request missing files'}, status=404)
-
-        s3 = S3Manager()
-        for file in files:
-            s3.upload_file(file, f"{asset_name}/{file.name}")
-
-        return Response({'message': 'Successfully uploaded'}, status=200)
-    
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)
-
-@api_view(['PUT'])
-def put_asset(request, asset_name):
-    try:
-        try:
-            Asset.objects.get(assetName=asset_name)
-        except Asset.DoesNotExist as e:
-            return Response({'error': 'Asset not found'}, status=404)
-            
-        files = request.FILES.getlist('files')
-        if not files:
-            return Response({'error': 'Request missing files'}, status=404)
-
-        s3 = S3Manager()
-        version_map = {}
-        for file in files:
-            key = f"{asset_name}/{file.name}"
-            response = s3.update_file(file, key)
-
-            # insert key to map, return this for our metadata
-            version_map.update({key, response["VersionId"]})
-
-        return Response({'message': 'Successfully updated', 'version_map': version_map}, status=200)
-
-    except Exception as e:
-        return Response({'error' : str(e)}, status=500)
 
 # Query:
 #   asset_name - A string as the name of the asset
