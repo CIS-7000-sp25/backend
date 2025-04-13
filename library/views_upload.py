@@ -41,12 +41,10 @@ def post_asset(request, asset_name, version):
     
 
 @api_view(['PUT'])
-def put_asset(request, asset_name):
+def put_asset(request, asset_name, new_version):
     try:
-        try:
-            Asset.objects.get(assetName=asset_name)
-        except Asset.DoesNotExist as e:
-            return Response({'error': 'Asset not found'}, status=404)
+        if not Asset.objects.get(assetName=asset_name):
+            return Response({'error': 'Asset does not exist'}, status=400)
             
         files = request.FILES.getlist('files')
         if not files:
@@ -54,12 +52,20 @@ def put_asset(request, asset_name):
 
         s3 = S3Manager()
         version_map = {}
-        for file in files:
-            key = f"{asset_name}/{file.name}"
-            response = s3.update_file(file, key)
 
-            # insert key to map, return this for our metadata
-            version_map.update({key, response["VersionId"]})
+        with zipfile.ZipFile(zip) as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.is_dir():
+                    continue
+
+                with zip_ref.open(file_info.filename) as extracted_file:
+                    key = f"{asset_name}/{new_version}/{file_info.filename}"
+                    response = s3.update_file(
+                        extracted_file, 
+                        key
+                    )
+
+                    version_map.update({key, response["VersionId"]})
 
         return Response({'message': 'Successfully updated', 'version_map': version_map}, status=200)
 
