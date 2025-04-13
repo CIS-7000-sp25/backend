@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from library.models import Asset, Keyword, Author, Commit, AssetVersion
+from library.models import Asset, Keyword, Author, Commit, Sublayer
 
 
 def upload_metadata(metadata):
@@ -9,13 +9,11 @@ def upload_metadata(metadata):
     assetName = metadata["assetName"]
     if assetName[-4:] == ".fbx":
         assetName = assetName[:-4]
-    assetStructureVersion = metadata["assetStructureVersion"]
     hasTexture = metadata["hasTexture"]
     thumbnailKey = f"{assetName}/thumbnail.png"
     asset = Asset(
         id=id, 
         assetName=assetName, 
-        assetStructureVersion=assetStructureVersion, 
         hasTexture=hasTexture, 
         thumbnailKey=thumbnailKey)
     asset.save()
@@ -36,12 +34,12 @@ def upload_metadata(metadata):
         commit = Commit(author=author, version=version, timestamp=timestamp, note=note, asset=asset)
         commit.save()
 
-    variantSet = AssetVersion(id=uuid.uuid4(), versionName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
+    variantSet = Sublayer(id=uuid.uuid4(), sublaterName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
     variantSet.save()
-    lod0 = AssetVersion(id=uuid.uuid4(), versionName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
+    lod0 = Sublayer(id=uuid.uuid4(), sublaterName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
     lod0.save()
-    lod1 = AssetVersion(id=uuid.uuid4(), versionName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
+    lod1 = Sublayer(id=uuid.uuid4(), sublaterName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
     lod1.save()
-    lod2 = AssetVersion(id=uuid.uuid4(), versionName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
+    lod2 = Sublayer(id=uuid.uuid4(), sublaterName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
     lod2.save()
 
