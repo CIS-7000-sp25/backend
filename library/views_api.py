@@ -159,6 +159,10 @@ def get_assets(request):
     
 @api_view(['GET'])
 def get_asset(request, asset_name):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
         # Get the asset by name
         asset = Asset.objects.get(assetName=asset_name)
@@ -193,7 +197,21 @@ def get_asset(request, asset_name):
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-    
+    finally:
+        # -------------------------------
+        # Performance logging
+        # -------------------------------
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_asset took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )
+
 @api_view(['POST'])
 def post_asset(request, asset_name):
     try:
