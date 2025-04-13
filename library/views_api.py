@@ -1,21 +1,19 @@
-from datetime import datetime
-import uuid
-from django.http import StreamingHttpResponse
-from django.db.models import Q, Max, Min
-from .models import Asset, Author, Commit, Sublayer, Keyword
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from .utils.s3_utils import S3Manager 
-from .utils.zipper import zip_files_from_memory
-from django.utils import timezone
-from django.db.models import OuterRef, Subquery, Prefetch
 import os
 import time
+import uuid
+from datetime import datetime
+
+from django.http import StreamingHttpResponse
+from django.utils import timezone
 from django.db import connection
+from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from django.db.models import Q, OuterRef, Subquery, Prefetch
-# import other necessary modules/models (Asset, Commit, S3Manager, etc.)
+
+from .models import Asset, Author, Commit, Sublayer, Keyword
+from .utils.s3_utils import S3Manager
+from .utils.zipper import zip_files_from_memory
 
 @api_view(['GET'])
 def get_assets(request):
