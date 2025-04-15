@@ -1,0 +1,21 @@
+#usda 1.0
+(
+    defaultPrim = "kitchenaid"
+)
+
+def "kitchenaid"
+{
+    def Scope "Materials" (
+        prepend references = @./default/material_default.usda@
+    )
+    {
+        def Scope "MaterialClasses"
+        {
+            over "class_Default"
+            {
+                prepend rel material:binding = </kitchenaid/Materials/mat_Default>
+            }
+        }
+    }
+}
+
