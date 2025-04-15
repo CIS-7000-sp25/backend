@@ -1,20 +1,28 @@
-from datetime import datetime
+import os
+import time
 import uuid
+from datetime import datetime
+
 from django.http import StreamingHttpResponse
-from django.db.models import Q, Max, Min
-from .models import Asset, Author, Commit, AssetVersion, Keyword
+from django.utils import timezone
+from django.db import connection
+from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .utils.s3_utils import S3Manager 
+
+from .models import Asset, Author, Commit, Sublayer, Keyword
+from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
-from django.utils import timezone
-from django.db.models import OuterRef, Subquery
-import os
 
 # from tests import UsdTest
 
 @api_view(['GET'])
 def get_assets(request):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
         # Get query parameters
         search = request.GET.get('search')
@@ -23,11 +31,13 @@ def get_assets(request):
         sort_by = request.GET.get('sortBy', 'updated')
 
         # Base queryset
-        assets = Asset.objects.all()
+        assets = Asset.objects.all().select_related('checkedOutBy')
 
+        # Subquery references for earliest and latest commits
         earliest_commit = Commit.objects.filter(asset=OuterRef('pk')).order_by('timestamp')
         latest_commit   = Commit.objects.filter(asset=OuterRef('pk')).order_by('-timestamp')
 
+        # Annotate with first-author and timestamp info
         assets = assets.annotate(
             first_author_first = Subquery(
                 earliest_commit.values('author__firstName')[:1]
@@ -45,7 +55,7 @@ def get_assets(request):
                 Q(assetName__icontains=search) |
                 Q(keywordsList__keyword__icontains=search)
             ).distinct()
-        
+
         # Apply checked-in filter
         if checked_in_only:
             assets = assets.filter(checkedOutBy__isnull=True)
@@ -58,47 +68,69 @@ def get_assets(request):
                     Q(first_author_last__icontains=token)
                 )
 
-        # Apply sorting and ensure uniqueness
+        # Apply sorting
         if sort_by == 'name':
             assets = assets.order_by('assetName')
-
         elif sort_by == 'author':
-            # sort by the *creator* (author of the first commit)
             assets = assets.order_by('first_author_first', 'first_author_last')
-
         elif sort_by == 'updated':
-            # most recently touched asset first
             assets = assets.order_by('-latest_ts')
-
         elif sort_by == 'created':
-            # asset whose *first* commit is newest comes first
             assets = assets.order_by('-first_ts')
 
+        # Prefetch commits & sublayers and keywords
+        assets = assets.prefetch_related(
+            Prefetch(
+                'commits',
+                queryset=Commit.objects
+                    .order_by('timestamp')
+                    .select_related('author')
+                    .prefetch_related('sublayers'),
+                to_attr='all_commits'
+            ),
+            'keywordsList'
+        )
 
         # Convert to frontend format
         assets_list = []
         s3Manager = S3Manager()
         for asset in assets:
             try:
-                # Get latest and first commits
-                latest_commit = Commit.objects.filter(asset=asset).order_by('-timestamp').first()
-                first_commit = Commit.objects.filter(asset=asset).order_by('timestamp').first()
-                thumbnail_url = s3Manager.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+                # Get first and latest commits from the prefetched 'all_commits' list
+                all_commits = asset.all_commits
+                first_commit = all_commits[0] if all_commits else None
+                latest_commit = all_commits[-1] if all_commits else None
+
+                # Check sublayers in-memory, no extra query
+                materials = bool(latest_commit.sublayers.all()) if latest_commit else False
+
+                # Generate the thumbnail URL if needed
+                thumbnail_url = (
+                    s3Manager.generate_presigned_url(asset.thumbnailKey)
+                    if asset.thumbnailKey else None
+                )
 
                 assets_list.append({
                     'name': asset.assetName,
-                    'thumbnailUrl': thumbnail_url,  # You'll need to handle S3 URL generation
+                    'thumbnailUrl': thumbnail_url,
                     'version': latest_commit.version if latest_commit else "01.00.00",
-                    'creator': f"{first_commit.author.firstName} {first_commit.author.lastName}" if first_commit and first_commit.author else "Unknown",
-                    'lastModifiedBy': f"{latest_commit.author.firstName} {latest_commit.author.lastName}" if latest_commit and latest_commit.author else "Unknown",
+                    'creator': (
+                        f"{first_commit.author.firstName} {first_commit.author.lastName}"
+                        if first_commit and first_commit.author else "Unknown"
+                    ),
+                    'lastModifiedBy': (
+                        f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
+                        if latest_commit and latest_commit.author else "Unknown"
+                    ),
                     'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
                     'isCheckedOut': asset.checkedOutBy is not None,
-                    'materials': latest_commit.sublayers.exists() if latest_commit else False,
+                    'materials': materials,
                     'keywords': [k.keyword for k in asset.keywordsList.all()],
                     'description': latest_commit.note if latest_commit else "No description available",
                     'createdAt': first_commit.timestamp.isoformat() if first_commit else None,
                     'updatedAt': latest_commit.timestamp.isoformat() if latest_commit else None,
                 })
+
             except Exception as e:
                 print(f"Error processing asset {asset.assetName}: {str(e)}")
                 continue
@@ -108,31 +140,79 @@ def get_assets(request):
     except Exception as e:
         print(f"Error in get_assets: {str(e)}")
         return Response({'error': str(e)}, status=500)
-    
+
+    finally:
+        # -------------------------------
+        # Performance logging
+        # -------------------------------
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_assets took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )
+
 @api_view(['GET'])
 def get_asset(request, asset_name):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
-        # Get the asset by name
-        asset = Asset.objects.get(assetName=asset_name)
-        
-        # Get latest and first commits
-        latest_commit = asset.commits.order_by('-timestamp').first()
-        first_commit = asset.commits.order_by('timestamp').first()
+        # Prefetch ALL commits (with author and sublayers) in one shot
+        asset = (
+            Asset.objects
+                 .select_related('checkedOutBy')
+                 .prefetch_related(
+                     'keywordsList',
+                     Prefetch(
+                         'commits',
+                         queryset=Commit.objects
+                                        .select_related('author')
+                                        .prefetch_related('sublayers'),
+                         to_attr='all_commits'  # store them in memory under this attribute
+                     )
+                 )
+                 .get(assetName=asset_name)
+        )
 
-        # Generate S3 URLs
+        # `asset.all_commits` is now a list of Commit objects in memory
+        all_commits = asset.all_commits
+
+        # Derive first and latest from that list
+        if all_commits:
+            first_commit = min(all_commits, key=lambda c: c.timestamp)
+            latest_commit = max(all_commits, key=lambda c: c.timestamp)
+        else:
+            first_commit = None
+            latest_commit = None
+
         s3Manager = S3Manager()
-        thumbnail_url = s3Manager.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+        thumbnail_url = (
+            s3Manager.generate_presigned_url(asset.thumbnailKey)
+            if asset.thumbnailKey else None
+        )
 
-        # Format the response to match frontend's AssetWithDetails interface
         asset_data = {
             'name': asset.assetName,
-            'thumbnailUrl': thumbnail_url,  # You'll need to handle S3 URL generation
+            'thumbnailUrl': thumbnail_url,
             'version': latest_commit.version if latest_commit else "01.00.00",
-            'creator': f"{first_commit.author.firstName} {first_commit.author.lastName}" if first_commit and first_commit.author else "Unknown",
-            'lastModifiedBy': f"{latest_commit.author.firstName} {latest_commit.author.lastName}" if latest_commit and latest_commit.author else "Unknown",
+            'creator': (
+                f"{first_commit.author.firstName} {first_commit.author.lastName}"
+                if first_commit and first_commit.author else "Unknown"
+            ),
+            'lastModifiedBy': (
+                f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
+                if latest_commit and latest_commit.author else "Unknown"
+            ),
             'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
             'isCheckedOut': asset.checkedOutBy is not None,
-            'materials': latest_commit.sublayers.exists() if latest_commit else False,
+            # Because the commits & sublayers are already prefetched, no extra DB calls here
+            'materials': bool(latest_commit and latest_commit.sublayers.all()),
             'keywords': [k.keyword for k in asset.keywordsList.all()],
             'description': latest_commit.note if latest_commit else "No description available",
             'createdAt': first_commit.timestamp.isoformat() if first_commit else None,
@@ -145,7 +225,18 @@ def get_asset(request, asset_name):
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
-    
+    finally:
+        # Performance logging
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_asset took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )
+
 @api_view(['POST'])
 def post_asset(request, asset_name):
     try:
@@ -172,37 +263,10 @@ def post_asset(request, asset_name):
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
-@api_view(['PUT'])
-def put_asset(request, asset_name):
-    try:
-        try:
-            Asset.objects.get(assetName=asset_name)
-        except Asset.DoesNotExist as e:
-            return Response({'error': 'Asset not found'}, status=404)
-            
-        files = request.FILES.getlist('files')
-        if not files:
-            return Response({'error': 'Request missing files'}, status=404)
-
-        s3 = S3Manager()
-        version_map = {}
-        for file in files:
-            key = f"{asset_name}/{file.name}"
-            response = s3.update_file(file, key)
-
-            # insert key to map, return this for our metadata
-            version_map.update({key, response["VersionId"]})
-
-        return Response({'message': 'Successfully updated', 'version_map': version_map}, status=200)
-
-    except Exception as e:
-        return Response({'error' : str(e)}, status=500)
-
 # Query:
 #   asset_name - A string as the name of the asset
 #   metadata - a JSON containing relevant metadata information
 #   metadata 
-#   - assetStructureVersion (string)
 #   - hasTexture (bool)    
 #   - keywords (list of keyword strings)
 #   - commit (Object contianing below)
@@ -223,7 +287,6 @@ def post_metadata(request, asset_name):
         asset = Asset(
             id = uuid.uuid4(),
             assetName = asset_name,
-            assetStructureVersion = metadata["assetStructureVersion"],
             hasTexture = metadata["hasTexture"],
             thumbnailKey = f"{asset_name}/thumbnail.png"
         )
@@ -256,9 +319,9 @@ def post_metadata(request, asset_name):
         }
         
         for version, key in versions:
-            asset_version = AssetVersion(
+            asset_version = Sublayer(
                 id = uuid.uuid4(), 
-                versionName = version, 
+                sublayerName = version, 
                 filepath = key, 
                 asset = asset)
             asset_version.save()
@@ -295,19 +358,19 @@ def put_metadata(request, asset_name, new_version):
         version_map = metadata['version_map'] # I don't think this is right
 
         for key, s3_id in version_map:
-            versionName = None
+            sublayerName = None
 
             if key[-4:] == ".usda":
-                versionName = "Variant Set"
+                sublayerName = "Variant Set"
                 tags = key[-9:-4]
                 if tags in {"_LOD0", "_LOD1", "_LOD2"}:
-                    versionName = tags[1:]
+                    sublayerName = tags[1:]
 
-            version_update = AssetVersion(
+            version_update = Sublayer(
                 id = uuid.uuid4(),
                 filepath = key,
                 s3id = s3_id,
-                versionName = versionName,
+                sublayerName = sublayerName,
                 version = new_version,
                 asset = db_asset
             )
@@ -473,7 +536,7 @@ def get_commit(request, commit_id):
             'sublayers': [
                 {
                     'id': str(layer.id),
-                    'versionName': layer.versionName,
+                    'sublayerName': layer.sublayerName,
                     'filepath': str(layer.filepath)
                 } for layer in commit.sublayers.all()
             ]

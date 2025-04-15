@@ -1,5 +1,5 @@
 import os
-from library.models import Asset, AssetVersion, Commit, Keyword, Author
+from library.models import Asset, Sublayer, Commit, Keyword, Author
 from datetime import datetime
 import uuid
 from pathlib import Path
@@ -7,7 +7,7 @@ import json
 import subprocess
 from django.conf import settings
 
-folder_path = Path("C:\\Users\\Admin\\Documents\\School\\cis-7000-production-pipilines\\final-project\\week-6-assets")
+folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 4 Assets")
 
 class Script:
     
@@ -22,10 +22,9 @@ class Script:
                 assetName = metadata["assetName"]
                 if assetName[-4:] == ".fbx":
                     assetName = assetName[:-4]
-                assetStructureVersion = metadata["assetStructureVersion"]
                 hasTexture = metadata["hasTexture"]
                 thumbnailKey = f"{assetName}/thumbnail.png"
-                asset = Asset(id=id, assetName=assetName, assetStructureVersion=assetStructureVersion, hasTexture=hasTexture, thumbnailKey=thumbnailKey)
+                asset = Asset(id=id, assetName=assetName, hasTexture=hasTexture, thumbnailKey=thumbnailKey)
                 asset.save()
                 for keyword in metadata["keywords"]:
                     keyword, created = Keyword.objects.get_or_create(keyword=keyword.lower())
@@ -43,13 +42,13 @@ class Script:
                     commit = Commit(author=author, version=version, timestamp=timestamp, note=note, asset=asset)
                     commit.save()
 
-                variantSet = AssetVersion(id=uuid.uuid4(), versionName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
+                variantSet = Sublayer(id=uuid.uuid4(), sublayerName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
                 variantSet.save()
-                lod0 = AssetVersion(id=uuid.uuid4(), versionName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
+                lod0 = Sublayer(id=uuid.uuid4(), sublayerName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
                 lod0.save()
-                lod1 = AssetVersion(id=uuid.uuid4(), versionName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
+                lod1 = Sublayer(id=uuid.uuid4(), sublayerName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
                 lod1.save()
-                lod2 = AssetVersion(id=uuid.uuid4(), versionName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
+                lod2 = Sublayer(id=uuid.uuid4(), sublayerName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
                 lod2.save()
 
     def addAuthors(self):
@@ -83,33 +82,32 @@ class Script:
         author.save()
 
 
-    def runAddAsset(self, assetName, assetStructureVersion, hasTexture, thumbnailFilepath, keywords, rootFolder):
+    def runAddAsset(self, assetName, hasTexture, thumbnailFilepath, keywords, rootFolder):
         id = uuid.uuid4()
-        asset = Asset(id=id, assetName=assetName, assetStructureVersion=assetStructureVersion, hasTexture=hasTexture, thumbnailFilepath=thumbnailFilepath)
+        asset = Asset(id=id, assetName=assetName, hasTexture=hasTexture, thumbnailFilepath=thumbnailFilepath)
         asset.save()
         for keyword in keywords:
             keyword, created = Keyword.objects.get_or_create(keyword=keyword.lower())
             asset.keywordsList.add(keyword)
 
-            variantSet = AssetVersion(id=uuid.uuid4(), versionName="Variant Set", filepath=rootFolder + f"//{assetName}.usda", asset=asset)
+            variantSet = Sublayer(id=uuid.uuid4(), sublayerName="Variant Set", filepath=rootFolder + f"//{assetName}.usda", asset=asset)
             variantSet.save()
-            lod0 = AssetVersion(id=uuid.uuid4(), versionName="LOD0", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD0.usda", asset=asset)
+            lod0 = Sublayer(id=uuid.uuid4(), sublayerName="LOD0", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD0.usda", asset=asset)
             lod0.save()
-            lod1 = AssetVersion(id=uuid.uuid4(), versionName="LOD1", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD1.usda", asset=asset)
+            lod1 = Sublayer(id=uuid.uuid4(), sublayerName="LOD1", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD1.usda", asset=asset)
             lod1.save()
-            lod2 = AssetVersion(id=uuid.uuid4(), versionName="LOD2", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD2.usda", asset=asset)
+            lod2 = Sublayer(id=uuid.uuid4(), sublayerName="LOD2", filepath=rootFolder + "//LODs" + f"//{assetName}_LOD2.usda", asset=asset)
             lod2.save()
     
     def runPrintAsset(self, assetName):
         asset = Asset.objects.filter(assetName=assetName)[0]
         print("Name: " + asset.assetName)
-        print("Structure Version: " + asset.assetStructureVersion)
         print("Has Texture: " + str(asset.hasTexture))
         print("Keywords: " + str(asset.keywordsList.all()))
         print("Thumbnail Filepath: " + str(asset.thumbnailFilepath))
 
     def runGetAsset(self, assetName):
-        return AssetVersion.objects.filter(asset__assetName=assetName).filter(versionName="Variant Set")[0].filepath
+        return Sublayer.objects.filter(asset__assetName=assetName).filter(sublayerName="Variant Set")[0].filepath
     
     def runGetAssetInBlender(self, assetName):
         filepath = self.runGetAsset(assetName)
