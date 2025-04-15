@@ -6,7 +6,7 @@ from datetime import datetime
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.db import connection
-from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch
+from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch, Case, When, BooleanField, F
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -591,7 +591,12 @@ def get_user(request, pennkey):
     initial_query_count = len(connection.queries)
 
     try:
-        # Get the author with prefetched related data
+        # Get number of recent commits to return (default to 5)
+        num_recent_commits = int(request.GET.get('recent_commits', 5))
+        if num_recent_commits < 1:
+            num_recent_commits = 5  # Ensure at least 1 commit is returned
+
+        # Get the author with prefetched related data in one query
         author = (
             Author.objects
             .prefetch_related(
@@ -599,58 +604,61 @@ def get_user(request, pennkey):
                     'commits',
                     queryset=Commit.objects
                         .select_related('asset')
-                        .order_by('-timestamp')[:5],  # Get 5 most recent commits
+                        .order_by('-timestamp')[:num_recent_commits],
                     to_attr='recent_commits'
                 )
             )
             .get(pennkey=pennkey)
         )
 
-        # # Get assets where this user made the first commit
-        created_assets = (
+        # Get both created and checked out assets in a single query with annotations
+        assets = (
             Asset.objects
-            .filter(
-                commits__author=author,
-                commits__timestamp=Subquery(
-                    Commit.objects
-                    .filter(asset=OuterRef('pk'))
-                    .order_by('timestamp')
-                    .values('timestamp')[:1]
+            .filter(commits__author=author)
+            .annotate(
+                first_commit_date=Min('commits__timestamp'),
+                last_commit_date=Max('commits__timestamp'),
+                is_created_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('first_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
+                ),
+                is_checked_out_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('last_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
                 )
             )
             .distinct()
         )
 
-        # # Get assets currently checked out by this user by looking at the latest commit
-        checked_out_assets = (
-            Asset.objects
-            .filter(
-                commits__author=author,
-                commits__timestamp=Subquery(
-                    Commit.objects
-                    .filter(asset=OuterRef('pk'))
-                    .order_by('-timestamp')
-                    .values('timestamp')[:1]
-                )
-            )
-            .distinct()
-        )
+        # Separate assets into created and checked out
+        created_assets = [asset for asset in assets if asset.is_created_by_user]
+        checked_out_assets = [asset for asset in assets if asset.is_checked_out_by_user]
 
         # Format the response with all the required information
         user_data = {
-            'pennId': author.pennkey,
+            'pennKey': author.pennkey,
             'fullName': f"{author.firstName} {author.lastName}".strip() or author.pennkey,
             'assetsCreated': [
                 {
                     'name': asset.assetName,
-                    'createdAt': asset.commits.order_by('timestamp').first().timestamp.isoformat()
+                    'createdAt': asset.first_commit_date.isoformat()
                 }
                 for asset in created_assets
             ],
             'checkedOutAssets': [
                 {
                     'name': asset.assetName,
-                    'checkedOutAt': asset.commits.order_by('-timestamp').first().timestamp.isoformat() if asset.commits.exists() else None
+                    'checkedOutAt': asset.last_commit_date.isoformat() if asset.last_commit_date else None
                 }
                 for asset in checked_out_assets
             ],
@@ -669,6 +677,8 @@ def get_user(request, pennkey):
 
     except Author.DoesNotExist:
         return Response({'error': 'User not found'}, status=404)
+    except ValueError:
+        return Response({'error': 'recent_commits parameter must be a positive integer'}, status=400)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
     finally:
