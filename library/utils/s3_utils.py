@@ -21,7 +21,7 @@ class S3Manager:
     def update_file(self, file, key):
         return self.client.put_object(Body=file, Bucket=self.bucket, Key=key)
 
-    def upload_file(self, file, key):
+    def upload_fileobj(self, file, key):
         self.client.upload_fileobj(file, self.bucket, key)
     
     def delete_file(self, key):

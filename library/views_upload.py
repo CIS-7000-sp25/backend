@@ -1,45 +1,72 @@
 from datetime import datetime
-import uuid
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .utils.s3_utils import S3Manager
+import zipfile
 
 from library.models import Asset, Keyword, Author, Commit, Sublayer
 
+@api_view(['POST'])
+def post_asset(request, asset_name):
+    try:
+        # On the frontend, we should first check if metadata exists
+        # Metadata upload is a separate POST
 
-def upload_metadata(metadata):
-    id = uuid.uuid4()
-    assetName = metadata["assetName"]
-    if assetName[-4:] == ".fbx":
-        assetName = assetName[:-4]
-    hasTexture = metadata["hasTexture"]
-    thumbnailKey = f"{assetName}/thumbnail.png"
-    asset = Asset(
-        id=id, 
-        assetName=assetName, 
-        hasTexture=hasTexture, 
-        thumbnailKey=thumbnailKey)
-    asset.save()
+        # if Asset.objects.get(assetName=asset_name):
+        #     return Response({'error': 'Asset already exists'}, status=400)
+        zip = request.FILES.get('file')
+        version = request.POST.get('version')
 
-    for keyword in metadata["keywords"]:
-        keyword = Keyword.objects.get_or_create(keyword=keyword.lower())
-        asset.keywordsList.add(keyword)
+        if not zip or not zip.name.endswith('.zip'):
+            return Response({'error': 'Request missing files'}, status=404)
 
-    for commit in metadata["commitHistory"]:
-        author = Author.objects.filter(pennkey=commit["author"]).first()
-        if author is None:
-            author = Author(pennkey=commit["author"], firstName="", lastName="")
-            author.save()
-            print(f"Author {commit['author']} not found, created new author.")
-        version = commit["version"] 
-        timestamp = datetime.fromisoformat(commit["timestamp"])
-        note = commit["note"]
-        commit = Commit(author=author, version=version, timestamp=timestamp, note=note, asset=asset)
-        commit.save()
+        s3 = S3Manager()
 
-    variantSet = Sublayer(id=uuid.uuid4(), sublaterName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
-    variantSet.save()
-    lod0 = Sublayer(id=uuid.uuid4(), sublaterName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
-    lod0.save()
-    lod1 = Sublayer(id=uuid.uuid4(), sublaterName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
-    lod1.save()
-    lod2 = Sublayer(id=uuid.uuid4(), sublaterName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
-    lod2.save()
+        with zipfile.ZipFile(zip) as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.is_dir():
+                    continue
 
+                with zip_ref.open(file_info.filename) as extracted_file:
+                    s3.upload_fileobj(
+                        extracted_file, 
+                        f"{asset_name}/{version}/{file_info.filename}"
+                    )
+
+        return Response({'message': 'Successfully uploaded'}, status=200)
+    
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+    
+
+@api_view(['PUT'])
+def put_asset(request, asset_name, new_version):
+    try:
+        if not Asset.objects.get(assetName=asset_name):
+            return Response({'error': 'Asset does not exist'}, status=400)
+            
+        files = request.FILES.getlist('files')
+        if not files:
+            return Response({'error': 'Request missing files'}, status=404)
+
+        s3 = S3Manager()
+        version_map = {}
+
+        with zipfile.ZipFile(zip) as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.is_dir():
+                    continue
+
+                with zip_ref.open(file_info.filename) as extracted_file:
+                    key = f"{asset_name}/{new_version}/{file_info.filename}"
+                    response = s3.update_file(
+                        extracted_file, 
+                        key
+                    )
+
+                    version_map.update({key, response["VersionId"]})
+
+        return Response({'message': 'Successfully updated', 'version_map': version_map}, status=200)
+
+    except Exception as e:
+        return Response({'error' : str(e)}, status=500)
