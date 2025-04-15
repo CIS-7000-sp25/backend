@@ -3,24 +3,23 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .utils.s3_utils import S3Manager
 import zipfile
-import os
-import tempfile
 
 from library.models import Asset, Keyword, Author, Commit, Sublayer
 
 @api_view(['POST'])
-def post_asset(request, asset_name, version):
+def post_asset(request, asset_name):
     try:
         # On the frontend, we should first check if metadata exists
         # Metadata upload is a separate POST
 
-        if Asset.objects.get(assetName=asset_name):
-            return Response({'error': 'Asset already exists'}, status=400)
+        # if Asset.objects.get(assetName=asset_name):
+        #     return Response({'error': 'Asset already exists'}, status=400)
+        zip = request.FILES.get('file')
+        version = request.POST.get('version')
 
-        zip = request.FILES.getlist('file')
         if not zip or not zip.name.endswith('.zip'):
             return Response({'error': 'Request missing files'}, status=404)
-        
+
         s3 = S3Manager()
 
         with zipfile.ZipFile(zip) as zip_ref:
