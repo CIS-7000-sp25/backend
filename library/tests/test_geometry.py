@@ -27,3 +27,13 @@ def test_no_empty_prim_names(all_usd_files, open_stage):
         stage = open_stage(file_path)
         for prim in stage.Traverse():
             assert prim.GetName(), f"Empty prim name at path {prim.GetPath()} in {file_path}"
+
+def test_check_bbox(all_usd_files, open_stage):
+    for file_path, _ in all_usd_files:
+        stage = open_stage(file_path)
+        for prim in stage.Traverse():
+            if prim.IsA(UsdGeom.Boundable):
+                boundable = UsdGeom.Boundable(prim)
+                bbox_attr = boundable.GetExtentAttr()
+                extent = bbox_attr.Get()
+                assert extent is not None, f"{prim.GetPath()} in {file_path} has no extent value"
