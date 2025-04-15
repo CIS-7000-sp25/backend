@@ -586,16 +586,100 @@ def get_users(request):
 
 @api_view(['GET'])
 def get_user(request, pennkey):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
-        author = Author.objects.get(pennkey=pennkey)
-        
+        # Get the author with prefetched related data
+        author = (
+            Author.objects
+            .prefetch_related(
+                Prefetch(
+                    'commits',
+                    queryset=Commit.objects
+                        .select_related('asset')
+                        .order_by('-timestamp')[:5],  # Get 5 most recent commits
+                    to_attr='recent_commits'
+                )
+            )
+            .get(pennkey=pennkey)
+        )
+
+        # # Get assets where this user made the first commit
+        created_assets = (
+            Asset.objects
+            .filter(
+                commits__author=author,
+                commits__timestamp=Subquery(
+                    Commit.objects
+                    .filter(asset=OuterRef('pk'))
+                    .order_by('timestamp')
+                    .values('timestamp')[:1]
+                )
+            )
+            .distinct()
+        )
+
+        # # Get assets currently checked out by this user by looking at the latest commit
+        checked_out_assets = (
+            Asset.objects
+            .filter(
+                commits__author=author,
+                commits__timestamp=Subquery(
+                    Commit.objects
+                    .filter(asset=OuterRef('pk'))
+                    .order_by('-timestamp')
+                    .values('timestamp')[:1]
+                )
+            )
+            .distinct()
+        )
+
+        # Format the response with all the required information
         user_data = {
             'pennId': author.pennkey,
             'fullName': f"{author.firstName} {author.lastName}".strip() or author.pennkey,
+            'assetsCreated': [
+                {
+                    'name': asset.assetName,
+                    'createdAt': asset.commits.order_by('timestamp').first().timestamp.isoformat()
+                }
+                for asset in created_assets
+            ],
+            'checkedOutAssets': [
+                {
+                    'name': asset.assetName,
+                    'checkedOutAt': asset.commits.order_by('-timestamp').first().timestamp.isoformat() if asset.commits.exists() else None
+                }
+                for asset in checked_out_assets
+            ],
+            'recentCommits': [
+                {
+                    'assetName': commit.asset.assetName,
+                    'version': commit.version,
+                    'note': commit.note,
+                    'timestamp': commit.timestamp.isoformat()
+                }
+                for commit in author.recent_commits
+            ]
         }
 
         return Response({'user': user_data})
+
     except Author.DoesNotExist:
         return Response({'error': 'User not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+    finally:
+        # Performance logging
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_user took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )
