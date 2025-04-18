@@ -2,15 +2,35 @@ from datetime import datetime
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .utils.s3_utils import S3Manager
+from pxr import Usd
 import zipfile
+import io
+import tempfile
 
 from library.models import Asset, Keyword, Author, Commit, Sublayer
 
-def verify_asset(extracted_file):
-    error_msg = "hii"
+from library.tests.test_post_asset import (
+    check_usd_properties
+)
 
+def verify_asset(extracted_file, file_name):
+    try:
+        # Write the in-memory file to a temporary file
+        with tempfile.NamedTemporaryFile(suffix=".usd", delete=False) as tmp:
+            data = extracted_file.read()
+            tmp.write(data)
+            tmp.flush()
+            tmp_filename = tmp.name
 
-    return (False, error_msg)
+        stage = Usd.Stage.Open(tmp_filename)
+        check_usd_properties(stage, file_name)
+        return (False, "No error")
+    except AssertionError as ae:
+        print(str(ae))
+        return (False, str(ae))
+    except Exception as e:
+        print(f"General Exception: {e}")
+        return (False, f"Unexpected error: {e}")
 
 def extract_zip(request, asset_name, is_upload):
     # TO DO: Find a way to cache this result so upload will grab results from verify
@@ -24,11 +44,12 @@ def extract_zip(request, asset_name, is_upload):
 
     with zipfile.ZipFile(zip) as zip_ref:
         for file_info in zip_ref.infolist():
-            if file_info.is_dir():
+            
+            if file_info.is_dir() or not file_info.filename.endswith('.usd'):
                 continue
             
             with zip_ref.open(file_info.filename) as extracted_file:
-                result = verify_asset(extracted_file)
+                result = verify_asset(extracted_file, file_info.filename)
 
                 if not result[0]:
                     print("you failed")
@@ -47,11 +68,10 @@ def get_verify(request, asset_name):
     try:
         print("you hit it")
         result, error_msg = extract_zip(request, asset_name, is_upload=False)
-        return Response({
+        return Response(data={
             'result' : result,
             'error_msg' : error_msg
             }, status=200) 
-
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
