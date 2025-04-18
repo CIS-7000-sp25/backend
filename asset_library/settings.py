@@ -89,8 +89,8 @@ WSGI_APPLICATION = "asset_library.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ.get("MYSQLDATABASE", "railway"),
-        'USER': os.environ.get("MYSQLUSER", "root"),
+        'NAME': os.environ.get("MYSQLDATABASE", config("MYSQLDATABASE")),
+        'USER': os.environ.get("MYSQLUSER", config("MYSQLUSER")),
         'PASSWORD': os.environ.get("MYSQLPASSWORD", config("MYSQLPASSWORD")),
         'HOST': os.environ.get("MYSQLHOST", config("MYSQLHOST")),
         'PORT': os.environ.get("MYSQLPORT", config("MYSQLPORT")),
