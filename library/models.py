@@ -49,7 +49,7 @@ class Sublayer(models.Model):
     previousVerion = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='nextVersions')
 
     def __str__(self):
-        return f"{self.versionName} - {self.asset.assetName}"
+        return f"{self.sublayerName} - {self.asset.assetName}"
 
 class Commit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
