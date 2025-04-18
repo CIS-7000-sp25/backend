@@ -7,7 +7,7 @@ import json
 import subprocess
 from django.conf import settings
 
-folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 10 Assets")
+folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 4 Assets")
 folder_path2 = Path("C:\\Users\\njbhv\\Downloads\\Final Assets v2\\Assets")
 
 class Script:
@@ -23,7 +23,9 @@ class Script:
                 assetName = metadata["assetName"]
                 if assetName[-4:] == ".fbx":
                     assetName = assetName[:-4]
-                hasTexture = metadata["hasTexture"]
+                hasTexture = False
+                if "hasTexture" in metadata:
+                    hasTexture = metadata["hasTexture"]
                 thumbnailKey = f"{assetName}/thumbnail.png"
                 asset = Asset(id=id, assetName=assetName, hasTexture=hasTexture, thumbnailKey=thumbnailKey)
                 asset.save()
@@ -49,15 +51,38 @@ class Script:
                     note = commit[commitNames[2]]
                     commit = Commit(author=author, version=version, timestamp=timestamp, note=note, asset=asset)
                     commit.save()
+                
+                newer_asset_folder = Path(folder_path2) / assetName
+                if not newer_asset_folder.exists():
+                    print(f"Missing Folder for {assetName}, skipping...")
+                    continue
 
-                variantSet = Sublayer(id=uuid.uuid4(), sublayerName="Variant Set", filepath=assetFolder / f"{assetName}.usda", asset=asset)
-                variantSet.save()
-                lod0 = Sublayer(id=uuid.uuid4(), sublayerName="LOD0", filepath=assetFolder / "LODs" / f"{assetName}_LOD0.usda", asset=asset)
-                lod0.save()
-                lod1 = Sublayer(id=uuid.uuid4(), sublayerName="LOD1", filepath=assetFolder / "LODs" / f"{assetName}_LOD1.usda", asset=asset)
-                lod1.save()
-                lod2 = Sublayer(id=uuid.uuid4(), sublayerName="LOD2", filepath=assetFolder / "LODs" / f"{assetName}_LOD2.usda", asset=asset)
-                lod2.save()
+                queue = [newer_asset_folder]
+                discovered = set()
+                while queue:
+                    currDir = queue.pop()
+                    print(currDir)
+                    for item in currDir.iterdir():
+                        if item.is_dir() and item not in discovered:
+                            queue.append(item)
+                            discovered.add(item)
+                        elif item.is_file() and (item.suffix in [".usda", ".usdc", ".usd", ".png"]):
+                            sublayerName = currDir.parts[-1]
+                            if sublayerName == assetName:
+                                sublayerName = "Unified"
+                            version = commit.version
+                            filepath = currDir.parts[len(newer_asset_folder.parts):]
+                            if str(filepath).endswith(".usda"):
+                                filepath = str(filepath).replace("\\", "/")
+                            sublayer = Sublayer(id=uuid.uuid4(), version=version, sublayerName=sublayerName, filepath=filepath, asset=asset)
+                            sublayer.save()
+                            for otherLayer in commit.sublayers.all():
+                                if otherLayer.filepath in filepath:
+                                    otherLayer.internalDependencies.add(sublayer)
+                                    otherLayer.save()
+
+                            commit.sublayers.add(sublayer)
+                            commit.save()
 
     def addAuthors(self):
         #Author.objects.all().delete()
