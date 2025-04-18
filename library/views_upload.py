@@ -8,7 +8,9 @@ from library.models import Asset, Keyword, Author, Commit, Sublayer
 
 def verify_asset(extracted_file):
     error_msg = "hii"
-    return (True, error_msg)
+
+
+    return (False, error_msg)
 
 def extract_zip(request, asset_name, is_upload):
     # TO DO: Find a way to cache this result so upload will grab results from verify
@@ -29,20 +31,27 @@ def extract_zip(request, asset_name, is_upload):
                 result = verify_asset(extracted_file)
 
                 if not result[0]:
-                    return Response({'error': result[1]})
+                    print("you failed")
+                    return (False, result[1])
                 
                 if is_upload:
                     s3.upload_fileobj(
                         extracted_file, 
                         f"{asset_name}/{version}/{file_info.filename}"
                     )
-    return True
+    
+    return (True, "good job")
 
-@api_view(['GET'])
+@api_view(['POST'])
 def get_verify(request, asset_name):
     try:
-        if extract_zip(request, asset_name, is_upload=False):
-            return Response({'message': 'Successfully uploaded'}, status=200)
+        print("you hit it")
+        result, error_msg = extract_zip(request, asset_name, is_upload=False)
+        return Response({
+            'result' : result,
+            'error_msg' : error_msg
+            }, status=200) 
+
     except Exception as e:
         return Response({'error': str(e)}, status=500)
 
