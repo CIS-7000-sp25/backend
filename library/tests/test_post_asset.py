@@ -2,6 +2,11 @@
 
 from pxr import Usd, UsdGeom
 
+def check_usd_properties(stage, file_name):
+    check_up_axis_is_y(stage, file_name)
+    check_meters_per_unit_is_001(stage, file_name)
+    check_default_prim_exists(stage, file_name)
+
 def check_up_axis_is_y(stage, file_name):
     assert UsdGeom.GetStageUpAxis(stage) == UsdGeom.Tokens.y, f"{file_name} has incorrect upAxis"
 
