@@ -1,6 +1,4 @@
-# usd_validators.py
-
-from pxr import Usd, UsdGeom
+from pxr import UsdGeom
 
 def check_usd_properties(stage, file_name):
     check_up_axis_is_y(stage, file_name)
