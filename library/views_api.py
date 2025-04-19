@@ -6,7 +6,7 @@ from datetime import datetime
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.db import connection
-from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch
+from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch, Case, When, BooleanField, F
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -560,16 +560,110 @@ def get_users(request):
 
 @api_view(['GET'])
 def get_user(request, pennkey):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
-        author = Author.objects.get(pennkey=pennkey)
-        
+        # Get number of recent commits to return (default to 5)
+        num_recent_commits = int(request.GET.get('recent_commits', 5))
+        if num_recent_commits < 1:
+            num_recent_commits = 5  # Ensure at least 1 commit is returned
+
+        # Get the author with prefetched related data in one query
+        author = (
+            Author.objects
+            .prefetch_related(
+                Prefetch(
+                    'commits',
+                    queryset=Commit.objects
+                        .select_related('asset')
+                        .order_by('-timestamp')[:num_recent_commits],
+                    to_attr='recent_commits'
+                )
+            )
+            .get(pennkey=pennkey)
+        )
+
+        # Get both created and checked out assets in a single query with annotations
+        assets = (
+            Asset.objects
+            .filter(commits__author=author)
+            .annotate(
+                first_commit_date=Min('commits__timestamp'),
+                last_commit_date=Max('commits__timestamp'),
+                is_created_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('first_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
+                ),
+                is_checked_out_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('last_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
+                )
+            )
+            .distinct()
+        )
+
+        # Separate assets into created and checked out
+        created_assets = [asset for asset in assets if asset.is_created_by_user]
+        checked_out_assets = [asset for asset in assets if asset.is_checked_out_by_user]
+
+        # Format the response with all the required information
         user_data = {
-            'pennId': author.pennkey,
+            'pennKey': author.pennkey,
             'fullName': f"{author.firstName} {author.lastName}".strip() or author.pennkey,
+            'assetsCreated': [
+                {
+                    'name': asset.assetName,
+                    'createdAt': asset.first_commit_date.isoformat()
+                }
+                for asset in created_assets
+            ],
+            'checkedOutAssets': [
+                {
+                    'name': asset.assetName,
+                    'checkedOutAt': asset.last_commit_date.isoformat() if asset.last_commit_date else None
+                }
+                for asset in checked_out_assets
+            ],
+            'recentCommits': [
+                {
+                    'assetName': commit.asset.assetName,
+                    'version': commit.version,
+                    'note': commit.note,
+                    'timestamp': commit.timestamp.isoformat()
+                }
+                for commit in author.recent_commits
+            ]
         }
 
         return Response({'user': user_data})
+
     except Author.DoesNotExist:
         return Response({'error': 'User not found'}, status=404)
+    except ValueError:
+        return Response({'error': 'recent_commits parameter must be a positive integer'}, status=400)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+    finally:
+        # Performance logging
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_user took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )

@@ -53,7 +53,7 @@ class Sublayer(models.Model):
 
 class Commit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
+    author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True, related_name='commits')
     version = models.CharField(max_length=32)
     timestamp = models.DateTimeField()
     note = models.TextField()
