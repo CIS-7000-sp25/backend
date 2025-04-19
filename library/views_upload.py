@@ -9,8 +9,8 @@ import tempfile
 
 from library.models import Asset, Keyword, Author, Commit, Sublayer
 
-from library.tests.test_post_asset import (
-    check_usd_properties
+from library.usd_validation import (
+    core, geometry, materials, references, structure
 )
 
 def verify_asset(extracted_file, file_name):
@@ -23,8 +23,12 @@ def verify_asset(extracted_file, file_name):
             tmp_filename = tmp.name
 
         stage = Usd.Stage.Open(tmp_filename)
-        check_usd_properties(stage, file_name)
-        return (False, "No error")
+        core.check_usd_properties(stage, file_name)
+        geometry.check_usd_geometry(stage, file_name)
+        materials.check_usd_materials(stage, file_name)
+        # references.check_usd_references(stage, file_name)
+        # structure.check_directory_structure(stage, file_name)
+        return (True, "No error")
     except AssertionError as ae:
         print(str(ae))
         return (False, str(ae))
@@ -45,7 +49,7 @@ def extract_zip(request, asset_name, is_upload):
     with zipfile.ZipFile(zip) as zip_ref:
         for file_info in zip_ref.infolist():
             
-            if file_info.is_dir() or not file_info.filename.endswith('.usd'):
+            if file_info.is_dir() or not (file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda')):
                 continue
             
             with zip_ref.open(file_info.filename) as extracted_file:
