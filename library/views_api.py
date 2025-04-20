@@ -15,6 +15,12 @@ from .models import Asset, Author, Commit, Sublayer, Keyword
 from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
 
+from django.db import transaction
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+import time
+from django.db import connection
+
 @api_view(['GET'])
 def get_assets(request):
     # Start the timer and capture initial query count
@@ -399,61 +405,68 @@ def put_metadata(request, asset_name, new_version):
 # TODO: This is a temporary endpoint for testing. Once we have a proper auth system, we should use that.
 @api_view(['POST'])
 def checkout_asset(request, asset_name):
+    # --- performance profiling --------------------------------
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+    # -----------------------------------------------------------
+
     try:
         print(f"Request data: {request.data}")
         print(f"Request headers: {request.headers}")
-        
-        # Get the asset
-        try:
-            asset = Asset.objects.get(assetName=asset_name)
-            print(f"Found asset: {asset.assetName}")
-        except Asset.DoesNotExist as e:
-            print(f"Asset not found: {asset_name}")
-            return Response({'error': 'Asset not found'}, status=404)
-        
-        # Get the user's pennkey from the request
-        pennkey = request.data.get('pennkey')
-        print(f"Received pennkey: {pennkey}")
-        
-        if not pennkey:
-            return Response({'error': 'pennkey is required'}, status=400)
 
-        # Check if asset is already checked out
-        if asset.checkedOutBy:
-            print(f"Asset already checked out by: {asset.checkedOutBy}")
-            return Response({
-                'error': f'Asset is already checked out by {asset.checkedOutBy.firstName} {asset.checkedOutBy.lastName}'
-            }, status=400)
+        with transaction.atomic():  # row‑level lock scope
+            # Fetch & lock the asset (opt ① + ② already in place)
+            try:
+                asset = (Asset.objects
+                               .select_related('checkedOutBy')
+                               .select_for_update()
+                               .get(assetName=asset_name))
+            except Asset.DoesNotExist:
+                return Response({'error': 'Asset not found'}, status=404)
 
-        # Get the user
-        try:
-            user = Author.objects.get(pennkey=pennkey)
-            print(f"Found user: {user.firstName} {user.lastName}")
-        except Author.DoesNotExist as e:
-            print(f"User not found: {pennkey}")
-            return Response({'error': 'User not found'}, status=404)
+            pennkey = request.data.get('pennkey')
+            if not pennkey:
+                return Response({'error': 'pennkey is required'}, status=400)
 
-        # Check out the asset
-        try:
+            # If already checked out → 400
+            if asset.checkedOutBy:
+                who = asset.checkedOutBy
+                return Response(
+                    {'error': f'Asset is already checked out by {who.firstName} {who.lastName}'},
+                    status=400,
+                )
+
+            # Fetch the user
+            try:
+                user = Author.objects.get(pennkey=pennkey)
+            except Author.DoesNotExist:
+                return Response({'error': 'User not found'}, status=404)
+
+            # ---------- perform checkout ----------
             asset.checkedOutBy = user
-            asset.save()
-            print("Asset checked out successfully")
-        except Exception as e:
-            print(f"Error saving asset: {str(e)}")
-            raise
+            asset.save(update_fields=['checkedOutBy'])           # optimisation ③
+
+            (Sublayer.objects
+                     .filter(asset=asset, checkedOutBy__isnull=True)  # optimisation ④
+                     .update(checkedOutBy=user))
 
         return Response({
-            'message': 'Asset checked out successfully',
+            'message': 'Asset and sublayers checked out successfully',
             'asset': {
                 'name': asset.assetName,
                 'checkedOutBy': user.pennkey,
-                'isCheckedOut': True
-            }
+                'isCheckedOut': True,
+            },
         })
 
     except Exception as e:
         print(f"Unexpected error in checkout_asset: {str(e)}")
         return Response({'error': str(e)}, status=500)
+
+    finally:
+        end_time = time.perf_counter()
+        queries_used = len(connection.queries) - initial_query_count
+        print(f"[PERF DEBUG] checkout_asset took {end_time - start_time:.4f}s and used {queries_used} queries.")
 
 @api_view(['GET'])
 def download_asset(request, asset_name):
