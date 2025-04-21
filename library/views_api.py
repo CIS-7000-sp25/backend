@@ -475,57 +475,49 @@ def checkout_asset(request, asset_name):
 
 @api_view(['GET'])
 def download_asset(request, asset_name):
-    """Stream a zipped version of the entire asset folder from S3 (as <asset_name>.zip)."""
+    """Stream a zipped version of the entire asset folder from S3."""
 
     t0 = time.perf_counter()
     print(f"[DEBUG] download_asset called with asset_name='{asset_name}'")
-    # logger.debug("download_asset called with asset_name=%s", asset_name)
 
     try:
-        # 1) Validate asset exists
-        try:
+        # Make sure the asset exists in the DB first (helps 404 early)
+        try: 
             Asset.objects.get(assetName=asset_name)
             print("[DEBUG] Asset exists in DB")
-        except Asset.DoesNotExist:
+        except: 
             print("[DEBUG] Asset not found in DB")
             return Response({'error': 'Asset not found'}, status=404)
 
-        # 2) List files in S3
+        t1 = time.perf_counter(); 
         s3 = S3Manager()
         prefix = f"{asset_name}"
-        print(f"[DEBUG] S3 prefix = '{prefix}'")
-
         keys = s3.list_s3_files(prefix)
-        print(f"[DEBUG] Found {len(keys)} file(s) in S3 under prefix")
 
         if not keys:
             return Response({'error': 'No files found for this asset'}, status=404)
+        else:
+            print(f"[DEBUG] Found {len(keys)} file(s) in S3 under prefix")
 
-        # 3) Download each file into memory
         file_data = {}
         for key in keys:
             name_in_zip = os.path.relpath(key, prefix)
-            try:
-                file_bytes = s3.download_s3_file(key)
-                file_data[name_in_zip] = file_bytes
-                print(f"[DEBUG]  + downloaded '{key}' -> '{name_in_zip}' ({len(file_bytes)} bytes)")
-            except Exception as e:
-                print(f"[ERROR]  ! failed to download '{key}': {e}")
-                traceback.print_exc()
-                raise
+            file_bytes  = s3.download_s3_file(key)
+            file_data[name_in_zip] = file_bytes
 
-        # 4) Zip in‑memory
         zip_buffer = zip_files_from_memory(file_data)
         print(f"[DEBUG] Zipped {len(file_data)} file(s), buffer size = {zip_buffer.getbuffer().nbytes} bytes")
+        elapsed = time.perf_counter() - t1; 
+        print(f"[DEBUG] Finding and zipping files finished in {elapsed:.3f}s")
 
-        # 5) Stream back to client
         response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
-        response['Content-Disposition'] = f'attachment; filename=\"{asset_name}.zip\""
-
+        response['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
         elapsed = time.perf_counter() - t0
         print(f"[PERF] download_asset finished in {elapsed:.3f}s")
         return response
 
+    except Asset.DoesNotExist:
+        return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
         print(f"[FATAL] Error in download_asset: {str(e)}")
         traceback.print_exc()
