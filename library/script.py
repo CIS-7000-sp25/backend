@@ -7,13 +7,13 @@ import json
 import subprocess
 from django.conf import settings
 
-folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 4 Assets")
+folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 10 Assets")
 folder_path2 = Path("C:\\Users\\njbhv\\Downloads\\Final Assets v2\\Assets")
 
 class Script:
     
     def runFileCrawler(self):
-        self.addAuthors()
+        #self.addAuthors()
         for assetFolder in folder_path.iterdir():
             with (assetFolder / "metadata.json").open('r') as f:
                 print("Processing", assetFolder)
@@ -35,9 +35,10 @@ class Script:
 
                 historyStr = "commitHistory" if "commitHistory" in metadata else "historical"
                 for commit in metadata[historyStr]:
-                    author = Author.objects.filter(pennkey=commit["author"]).first()
+                    author = Author.objects.filter(username=commit["author"]).first()
                     if author is None:
-                        author = Author(pennkey=commit["author"], firstName="", lastName="")
+                        author, created = Author.objects.get_or_create(username=commit["author"], password="", firstName="", lastName="")
+                        author.set_password("password")
                         author.save()
                         print(f"Author {commit['author']} not found, created new author.")
                     
@@ -84,33 +85,46 @@ class Script:
                             commit.save()
 
     def addAuthors(self):
-        Author.objects.all().delete()
+        #Author.objects.all().delete()
         
-        author = Author(pennkey="willcai", firstName="Will", lastName="Cai")
+        author = Author(username="willcai", password="", firstName="Will", lastName="Cai")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="eschou", firstName="Elyssa", lastName="Chou")
+        author = Author(username="eschou", password="", firstName="Elyssa", lastName="Chou")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="fernc", firstName="Caroline", lastName="Fernandes")
+        author = Author(username="fernc", password="", firstName="Caroline", lastName="Fernandes")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="geant", firstName="Anthony", lastName="Ge")
+        author = Author(username="geant", password="", firstName="Anthony", lastName="Ge")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="jyguan", firstName="Jackie", lastName="Guan")
+        author = Author(username="jyguan", password="", firstName="Jackie", lastName="Guan")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="aajiang", firstName="Aaron", lastName="Jiang")
+        author = Author(username="aajiang", password="", firstName="Aaron", lastName="Jiang")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="raclin", firstName="Rachel", lastName="Lin")
+        author = Author(username="raclin", password="", firstName="Rachel", lastName="Lin")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="liuamy05", firstName="Amy", lastName="Liu")
+        author = Author(username="liuamy05", password="", firstName="Amy", lastName="Liu")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="claran", firstName="Clara", lastName="Nolan")
+        author = Author(username="claran", password="", firstName="Clara", lastName="Nolan")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="soominp", firstName="Jacky", lastName="Park")
+        author = Author(username="soominp", password="", firstName="Jacky", lastName="Park")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="chuu", firstName="Christina", lastName="Qiu")
+        author = Author(username="chuu", password="", firstName="Christina", lastName="Qiu")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="czw", firstName="Charles", lastName="Wang")
+        author = Author(username="czw", password="", firstName="Charles", lastName="Wang")
+        author.set_password("password")
         author.save()
-        author = Author(pennkey="cxndy", firstName="Cindy", lastName="Xu")
+        author = Author(username="cxndy", password="", firstName="Cindy", lastName="Xu")
+        author.set_password("password")
         author.save()
 
 
