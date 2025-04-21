@@ -2,6 +2,11 @@ from django.urls import path
 from . import views
 from . import views_api
 from . import views_upload
+from . import views_auth
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+)
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -21,4 +26,10 @@ urlpatterns = [
     path('api/commits/<str:commit_id>/', views_api.get_commit, name='get_commit'),
     path('api/users/', views_api.get_users, name='get_users'),
     path('api/users/<str:pennkey>/', views_api.get_user, name='get_user'),
+    
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # testing purposes only
+    path('api/protected/', views_auth.ProtectedView.as_view(), name='protected'),
+    path('api/protected2/', views_auth.protected_view, name='protected2'),
 ]

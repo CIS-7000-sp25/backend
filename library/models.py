@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.contrib.auth.models import AbstractUser
 
 # Create your models here.
 
@@ -15,12 +16,15 @@ class StatusTag(models.Model):
     def __str__(self):
         return self.statusTag
     
-class Author(models.Model):
-    pennkey = models.CharField(max_length=200, primary_key=True)
+class Author(AbstractUser):
     firstName= models.CharField(max_length=200, default="")
     lastName= models.CharField(max_length=200, default="")
     email= models.CharField(max_length=200, default="")
 
+    @property
+    def pennkey(self):
+        return self.username
+    
     def __str__(self):
         return f"{self.firstName} {self.lastName} ({self.pennkey})"
     
