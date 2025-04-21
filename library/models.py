@@ -33,6 +33,7 @@ class Asset(models.Model):
     assetName = models.CharField(max_length=200)
     keywordsList = models.ManyToManyField(Keyword)
     hasTexture = models.BooleanField(default=False)
+    # DEPRECATED: use checkedOutBy in Sublayer instead
     checkedOutBy = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
     thumbnailKey = models.CharField(max_length=200, blank=True, null=True)
     
@@ -45,6 +46,7 @@ class Sublayer(models.Model):
     s3id = models.CharField(max_length=1024)
     version = models.CharField(max_length=32)
     sublayerName = models.CharField(max_length=200)
+    checkedOutBy = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
     filepath = models.CharField(max_length=200)    
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE)
     internalDependencies = models.ManyToManyField('self', blank=True, symmetrical=False, related_name='internal_dependents')
