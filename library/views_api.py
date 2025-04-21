@@ -289,10 +289,12 @@ def post_metadata(request, asset_name):
             keyword, created = Keyword.objects.get_or_create(keyword=keyword.lower())
             asset.keywordsList.add(keyword)
 
-        author = Author.objects.filter(pennkey=commit["author"]).first()
+        author = Author.objects.filter(username=commit["author"]).first()
 
         if author is None:
-            author = Author(pennkey=commit["author"], firstName="", lastName="")
+            author = Author(username=commit["author"], firstName="", lastName="")
+            # DEFAULT PASSWORD set as "password"
+            author.set_password("password")
             author.save()
             print(f"Author {commit['author']} not found, created new author.")
 
@@ -376,10 +378,12 @@ def put_metadata(request, asset_name, new_version):
 
         # Add a new commit
         commit = metadata["commit"]
-        author = Author.objects.filter(pennkey=commit["author"]).first()
+        author = Author.objects.filter(username=commit["author"]).first()
 
         if author is None:
-            author = Author(pennkey=commit["author"], firstName="", lastName="")
+            author = Author(username=commit["author"], firstName="", lastName="")
+            # DEFAULT PASSWORD set as "password"
+            author.set_password("password")
             author.save()
             print(f"Author {commit['author']} not found, created new author.")
 
@@ -427,7 +431,7 @@ def checkout_asset(request, asset_name):
 
         # Get the user
         try:
-            user = Author.objects.get(pennkey=pennkey)
+            user = Author.objects.get(username=pennkey)
             print(f"Found user: {user.firstName} {user.lastName}")
         except Author.DoesNotExist as e:
             print(f"User not found: {pennkey}")
@@ -582,7 +586,7 @@ def get_user(request, pennkey):
                     to_attr='recent_commits'
                 )
             )
-            .get(pennkey=pennkey)
+            .get(username=pennkey)
         )
 
         # Get both created and checked out assets in a single query with annotations
