@@ -4,16 +4,16 @@ from rest_framework.response import Response
 from .utils.s3_utils import S3Manager
 from pxr import Usd
 import zipfile
-import io
 import tempfile
+from pathlib import Path
 
-from library.models import Asset, Keyword, Author, Commit, Sublayer
+from library.models import Asset
 
 from library.usd_validation import (
     core, geometry, materials, references, structure
 )
 
-def verify_asset(extracted_file, file_name):
+def verify_asset(extracted_file, file_name, tmp_dir):
     try:
         # Write the in-memory file to a temporary file
         with tempfile.NamedTemporaryFile(suffix=".usd", delete=False) as tmp:
@@ -26,12 +26,13 @@ def verify_asset(extracted_file, file_name):
         core.check_usd_properties(stage, file_name)
         geometry.check_usd_geometry(stage, file_name)
         materials.check_usd_materials(stage, file_name)
-        # references.check_usd_references(stage, file_name)
-        # structure.check_directory_structure(stage, file_name)
+        references.check_usd_references(stage, Path(file_name), tmp_dir)
+        if Path(file_name).stem == Path(file_name).parents[0].name:
+            structure.check_usd_structure(stage, file_name, tmp_dir)
         return (True, "No error")
     except AssertionError as ae:
-        print(str(ae))
-        return (False, str(ae))
+        print(f"Assertion error: {str(ae)}")
+        return (False, f"Assertion error: {str(ae)}")
     except Exception as e:
         print(f"General Exception: {e}")
         return (False, f"Unexpected error: {e}")
@@ -42,18 +43,40 @@ def extract_zip(request, asset_name, is_upload):
     version = request.POST.get('version')
 
     if not zip or not zip.name.endswith('zip'):
-        return Response({'error' : 'Not a zip, or missing files'}, status=404)
+        return Response({'error': 'Not a zip, or missing files'}, status=404)
     
     s3 = S3Manager() if is_upload else None
 
+    # Extract to a temporary directory
     with zipfile.ZipFile(zip) as zip_ref:
+        temp_dir = Path(tempfile.mkdtemp())
+
+        # Extract all files to temp_dir while preserving folder structure
         for file_info in zip_ref.infolist():
+            # Create the full path for the file
+            extracted_file_path = temp_dir / file_info.filename
             
+            # If the file is a directory, just make sure it exists
+            if file_info.is_dir():
+                extracted_file_path.mkdir(parents=True, exist_ok=True)
+                continue
+            
+            # Make sure the directory structure exists for the file
+            extracted_file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Extract the file
+            with zip_ref.open(file_info) as extracted_file:
+                with open(extracted_file_path, 'wb') as out_file:
+                    out_file.write(extracted_file.read())
+
+        # Run USD verification on extracted files
+        for file_info in zip_ref.infolist():
             if file_info.is_dir() or not (file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda')):
                 continue
             
-            with zip_ref.open(file_info.filename) as extracted_file:
-                result = verify_asset(extracted_file, file_info.filename)
+            # Only process USD files
+            with open(temp_dir / file_info.filename, 'rb') as extracted_file:
+                result = verify_asset(extracted_file, file_info.filename, temp_dir)
 
                 if not result[0]:
                     print("you failed")
@@ -66,6 +89,7 @@ def extract_zip(request, asset_name, is_upload):
                     )
     
     return (True, "good job")
+
 
 @api_view(['POST'])
 def get_verify(request, asset_name):
