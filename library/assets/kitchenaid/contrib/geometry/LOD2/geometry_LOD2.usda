@@ -1,0 +1,26 @@
+#usda 1.0
+(
+    defaultPrim = "/kitchenaid/Geometry"
+)
+
+def "kitchenaid"
+{
+    def "Geometry"
+    {
+        def Xform "kitchenaid_LOD2" (
+            prepend inherits = </kitchenaid/Materials/MaterialClasses/class_Default>
+        )
+        {
+            float3 xformOp:rotateXYZ = (-90, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:rotateXYZ"]
+
+            def Cube "base"
+            {
+                float3 xformOp:scale = (0.1, 0.15, 0.15)
+                double3 xformOp:translate = (0, 0, 0.15)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:scale"]
+            }
+        }
+    }
+}
+
