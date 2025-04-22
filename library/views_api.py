@@ -1,12 +1,31 @@
+import io
 import os
 import time
 import uuid
 import traceback
 from datetime import datetime
+from zipfile import ZipFile, ZIP_DEFLATED
 
-from django.db import connection, transaction
-from django.db.models import BooleanField, Case, F, Max, Min, OuterRef, Prefetch, Q, Subquery, When
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import StreamingHttpResponse
+from django.utils import timezone
+from django.db import (
+    connection,
+    transaction,
+)
+from django.db.models import (
+    Q,
+    Max,
+    Min,
+    OuterRef,
+    Subquery,
+    Prefetch,
+    Case,
+    When,
+    BooleanField,
+    F,
+    Exists
+)
+
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -469,53 +488,86 @@ def checkout_asset(request, asset_name):
         queries_used = len(connection.queries) - initial_query_count
         print(f"[PERF DEBUG] checkout_asset took {end_time - start_time:.4f}s and used {queries_used} queries.")
 
+
+def _stream_zip(content, asset_name, is_streaming_body=False):
+    """
+    Helper to build a StreamingHttpResponse.
+    `content` can be a botocore StreamingBody OR a BytesIO.
+    """
+    resp = StreamingHttpResponse(
+        streaming_content=content if is_streaming_body else iter(lambda: content.read(8 * 1024), b""),
+        content_type="application/zip",
+    )
+    resp['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
+    return resp
+
+
 @api_view(['GET'])
 def download_asset(request, asset_name):
-    """Stream a zipped version of the entire asset folder from S3."""
+    """
+    Return the newest version of <asset_name> as <asset_name>.zip.
+
+    • If {asset}/{version}/{asset}.zip exists (cache‑hit) – stream it directly.
+    • Else build a zip from that version’s loose files, upload it, then stream.
+    • Version strings are compared numerically component‑wise: 01.10.3 < 01.10.10 < 02.00.00.
+    """
 
     t0 = time.perf_counter()
-    print(f"[DEBUG] download_asset called with asset_name='{asset_name}'")
+    print(f"[DEBUG] download_asset('{asset_name}')")
 
     try:
-        # Make sure the asset exists in the DB first (helps 404 early)
-        try: 
-            Asset.objects.get(assetName=asset_name)
-            print("[DEBUG] Asset exists in DB")
-        except: 
-            print("[DEBUG] Asset not found in DB")
+        # 1. Verify asset exists in DB
+        if not Asset.objects.filter(assetName=asset_name).exists():
             return Response({'error': 'Asset not found'}, status=404)
 
-        t1 = time.perf_counter(); 
+        # 2. Ask S3 which version is newest
         s3 = S3Manager()
-        prefix = f"{asset_name}"
-        keys = s3.list_s3_files(prefix)
-
-        if not keys:
+        latest_version = s3.get_latest_version(asset_name)
+        if latest_version is None:
             return Response({'error': 'No files found for this asset'}, status=404)
-        else:
-            print(f"[DEBUG] Found {len(keys)} file(s) in S3 under prefix")
 
-        file_data = {}
-        for key in keys:
-            name_in_zip = os.path.relpath(key, prefix)
-            file_bytes  = s3.download_s3_file(key)
-            file_data[name_in_zip] = file_bytes
+        print(f"[DEBUG] Latest version detected: {latest_version}")
 
-        zip_buffer = zip_files_from_memory(file_data)
-        print(f"[DEBUG] Zipped {len(file_data)} file(s), buffer size = {zip_buffer.getbuffer().nbytes} bytes")
-        elapsed = time.perf_counter() - t1; 
-        print(f"[DEBUG] Finding and zipping files finished in {elapsed:.3f}s")
+        zip_key = f"{asset_name}/{latest_version}/{asset_name}.zip"
+        data_prefix = f"{asset_name}/{latest_version}/"
 
-        response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
-        response['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
-        elapsed = time.perf_counter() - t0
-        print(f"[PERF] download_asset finished in {elapsed:.3f}s")
-        return response
+        # 3. Fast path – cached zip exists
+        if s3.check_if_exists(zip_key):
+            print(f"[DEBUG] Cache‑hit – streaming '{zip_key}'")
+            obj = s3.client.get_object(Bucket=s3.bucket, Key=zip_key)
+            return _stream_zip(obj['Body'], asset_name, is_streaming_body=True)
 
-    except Asset.DoesNotExist:
-        return Response({'error': 'Asset not found'}, status=404)
+        # 4. Cache‑miss – list loose files under latest version
+        keys = s3.list_s3_files(data_prefix)
+        if not keys:
+            return Response({'error': 'Latest version folder is empty'}, status=500)
+
+        print(f"[DEBUG] Cache‑miss – bundling {len(keys)} objects")
+
+        # 5. Build zip in memory
+        zip_buffer = io.BytesIO()
+        with ZipFile(zip_buffer, mode='w', compression=ZIP_DEFLATED) as zf:
+            for key in keys:
+                arc_name = os.path.relpath(key, data_prefix)
+                zf.writestr(arc_name, s3.download_s3_file(key))
+        zip_buffer.seek(0)
+        print(f"[DEBUG] ZIP built ({zip_buffer.getbuffer().nbytes} bytes)")
+
+        # 6. Upload new zip back to S3 (best‑effort)
+        try:
+            s3.upload_fileobj(zip_buffer, zip_key)
+            print(f"[DEBUG] Uploaded new cache file '{zip_key}'")
+            zip_buffer.seek(0)  # rewind for response
+        except Exception as e:
+            print(f"[WARN] Could not upload ZIP cache: {e}")
+
+        # 7. Stream response
+        resp = _stream_zip(zip_buffer, asset_name)
+        print(f"[PERF] download_asset (cache‑miss) -> {time.perf_counter() - t0:.3f}s")
+        return resp
+
     except Exception as e:
-        print(f"[FATAL] Error in download_asset: {str(e)}")
+        print(f"[FATAL] download_asset error: {e}")
         traceback.print_exc()
         return Response({'error': str(e)}, status=500)
     
@@ -556,25 +608,45 @@ def download_glb(request, asset_name):
 
 @api_view(['GET'])
 def get_commits(request):
+    t0 = time.perf_counter()
+    initial_q = len(connection.queries)
+
     try:
-        commits = Commit.objects.all().order_by('-timestamp')
-        commits_list = []
-        
-        for commit in commits:
-            commits_list.append({
-                'commitId': str(commit.id),
-                'pennKey': commit.author.pennkey if commit.author else None,
-                'versionNum': commit.version,
-                'notes': commit.note,
-                'commitDate': commit.timestamp.isoformat(),
-                'hasMaterials': commit.sublayers.exists(),
-                'state': [],  # This matches the frontend interface but we don't have state in backend
-                'assetName': commit.asset.assetName
-            })
+        commits = (
+            Commit.objects
+                  .select_related('author', 'asset')
+                  .prefetch_related('sublayers')
+                  .annotate(
+                      has_materials=Exists(
+                          Sublayer.objects.filter(commits=OuterRef('pk'))
+                      )
+                  )
+                  .order_by('-timestamp')
+        )
+
+        commits_list = [
+            {
+                'commitId'   : str(c.id),
+                'pennKey'    : c.author.pennkey if c.author else None,
+                'versionNum' : c.version,
+                'notes'      : c.note,
+                'commitDate' : c.timestamp.isoformat(),
+                'hasMaterials': c.has_materials,
+                'state'      : [],
+                'assetName'  : c.asset.assetName,
+            }
+            for c in commits
+        ]
 
         return Response({'commits': commits_list})
+
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+    finally:
+        elapsed = time.perf_counter() - t0
+        queries = len(connection.queries) - initial_q
+        print(f"[PERF] get_commits → {elapsed:.4f}s, {queries} DB queries")
 
 @api_view(['GET'])
 def get_commit(request, commit_id):
@@ -608,6 +680,69 @@ def get_commit(request, commit_id):
         return Response({'error': 'Commit not found'}, status=404)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+@api_view(['GET'])
+def get_asset_commits(request, asset_name):
+    """
+    GET /api/asset/<asset_name>/commits/
+    Returns every commit whose asset has the given name.
+    """
+    t0 = time.perf_counter()
+    initial_q = len(connection.queries)
+
+    try:
+        # 1. Ensure the asset exists (early 404)
+        if not Asset.objects.filter(assetName=asset_name).exists():
+            return Response({'error': 'Asset not found'}, status=404)
+
+        # 2. Pull commits efficiently
+        commits = (
+            Commit.objects
+                  .filter(asset__assetName=asset_name)
+                  .select_related('author', 'asset')      # avoid N+1 on FKs
+                  .prefetch_related('sublayers')          # avoid N+1 on M2M
+                  .annotate(                              # fast hasMaterials flag
+                      has_materials=Exists(
+                          Commit.sublayers.through.objects.filter(commit_id=OuterRef('pk'))
+                      )
+                  )
+                  .order_by('-timestamp')
+        )
+
+        commits_list = [
+            {
+                'commitId'   : str(c.id),
+                'pennKey'    : c.author.pennkey if c.author else None,
+                'versionNum' : c.version,
+                'notes'      : c.note,
+                'commitDate' : c.timestamp.isoformat(),
+                'hasMaterials': c.has_materials,
+                'state'      : [],
+                'assetName'  : c.asset.assetName,
+                'authorName' : f"{c.author.firstName} {c.author.lastName}" if c.author else None,
+                'authorEmail': c.author.email if c.author else None,
+                'assetId'    : str(c.asset.id),
+                'sublayers'  : [
+                    {
+                        'id'          : str(layer.id),
+                        'sublayerName': layer.sublayerName,
+                        'filepath'    : str(layer.filepath),
+                    }
+                    for layer in c.sublayers.all()
+                ],
+            }
+            for c in commits
+        ]
+
+        return Response({'commits': commits_list})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+    finally:
+        elapsed = time.perf_counter() - t0
+        queries = len(connection.queries) - initial_q
+        print(f"[PERF] get_asset_commits({asset_name}) → {elapsed:.4f}s, {queries} DB queries")
 
 @api_view(['GET'])
 def get_users(request):

@@ -108,6 +108,9 @@ def post_asset(request, asset_name):
     try:
         # On the frontend, we should first check if metadata exists
         # Metadata upload is a separate POST
+                    
+        s3.upload_fileobj(zip, f"{asset_name}/{version}/{asset_name}.zip")
+
 
         if extract_zip(request, asset_name, is_upload=True):
             return Response({'message': 'Successfully uploaded'}, status=200)
