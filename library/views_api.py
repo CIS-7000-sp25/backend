@@ -23,6 +23,7 @@ from django.db.models import (
     When,
     BooleanField,
     F,
+    Exists
 )
 
 from rest_framework.decorators import api_view
@@ -568,25 +569,45 @@ def download_asset(request, asset_name):
 
 @api_view(['GET'])
 def get_commits(request):
+    t0 = time.perf_counter()
+    initial_q = len(connection.queries)
+
     try:
-        commits = Commit.objects.all().order_by('-timestamp')
-        commits_list = []
-        
-        for commit in commits:
-            commits_list.append({
-                'commitId': str(commit.id),
-                'pennKey': commit.author.pennkey if commit.author else None,
-                'versionNum': commit.version,
-                'notes': commit.note,
-                'commitDate': commit.timestamp.isoformat(),
-                'hasMaterials': commit.sublayers.exists(),
-                'state': [],  # This matches the frontend interface but we don't have state in backend
-                'assetName': commit.asset.assetName
-            })
+        commits = (
+            Commit.objects
+                  .select_related('author', 'asset')
+                  .prefetch_related('sublayers')
+                  .annotate(
+                      has_materials=Exists(
+                          Sublayer.objects.filter(commits=OuterRef('pk'))
+                      )
+                  )
+                  .order_by('-timestamp')
+        )
+
+        commits_list = [
+            {
+                'commitId'   : str(c.id),
+                'pennKey'    : c.author.pennkey if c.author else None,
+                'versionNum' : c.version,
+                'notes'      : c.note,
+                'commitDate' : c.timestamp.isoformat(),
+                'hasMaterials': c.has_materials,
+                'state'      : [],
+                'assetName'  : c.asset.assetName,
+            }
+            for c in commits
+        ]
 
         return Response({'commits': commits_list})
+
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+    finally:
+        elapsed = time.perf_counter() - t0
+        queries = len(connection.queries) - initial_q
+        print(f"[PERF] get_commits → {elapsed:.4f}s, {queries} DB queries")
 
 @api_view(['GET'])
 def get_commit(request, commit_id):
