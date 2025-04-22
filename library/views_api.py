@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import traceback
 from datetime import datetime
 
 from django.db import connection, transaction
@@ -468,16 +469,28 @@ def checkout_asset(request, asset_name):
 @api_view(['GET'])
 def download_asset(request, asset_name):
     """Stream a zipped version of the entire asset folder from S3."""
+
+    t0 = time.perf_counter()
+    print(f"[DEBUG] download_asset called with asset_name='{asset_name}'")
+
     try:
         # Make sure the asset exists in the DB first (helps 404 early)
-        Asset.objects.get(assetName=asset_name)
+        try: 
+            Asset.objects.get(assetName=asset_name)
+            print("[DEBUG] Asset exists in DB")
+        except: 
+            print("[DEBUG] Asset not found in DB")
+            return Response({'error': 'Asset not found'}, status=404)
 
+        t1 = time.perf_counter(); 
         s3 = S3Manager()
         prefix = f"{asset_name}"
         keys = s3.list_s3_files(prefix)
 
         if not keys:
             return Response({'error': 'No files found for this asset'}, status=404)
+        else:
+            print(f"[DEBUG] Found {len(keys)} file(s) in S3 under prefix")
 
         file_data = {}
         for key in keys:
@@ -486,15 +499,21 @@ def download_asset(request, asset_name):
             file_data[name_in_zip] = file_bytes
 
         zip_buffer = zip_files_from_memory(file_data)
+        print(f"[DEBUG] Zipped {len(file_data)} file(s), buffer size = {zip_buffer.getbuffer().nbytes} bytes")
+        elapsed = time.perf_counter() - t1; 
+        print(f"[DEBUG] Finding and zipping files finished in {elapsed:.3f}s")
 
         response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
         response['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
+        elapsed = time.perf_counter() - t0
+        print(f"[PERF] download_asset finished in {elapsed:.3f}s")
         return response
 
     except Asset.DoesNotExist:
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
-        print(f"Error in download_asset: {str(e)}")
+        print(f"[FATAL] Error in download_asset: {str(e)}")
+        traceback.print_exc()
         return Response({'error': str(e)}, status=500)
     
 @api_view(['GET'])
