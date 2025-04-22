@@ -3,23 +3,16 @@ import time
 import uuid
 from datetime import datetime
 
-from django.http import StreamingHttpResponse
-from django.utils import timezone
-from django.db import connection
-from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch, Case, When, BooleanField, F
-
+from django.db import connection, transaction
+from django.db.models import BooleanField, Case, F, Max, Min, OuterRef, Prefetch, Q, Subquery, When
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Asset, Author, Commit, Sublayer, Keyword
+from .models import Asset, Author, Commit, Keyword, Sublayer
 from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
 
-from django.db import transaction
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-import time
-from django.db import connection
 
 @api_view(['GET'])
 def get_assets(request):
@@ -353,7 +346,7 @@ def put_metadata(request, asset_name, new_version):
         db_asset = None
         try:
             db_asset = Asset.objects.get(assetName=asset_name)
-        except Asset.DoesNotExist as e:
+        except Asset.DoesNotExist:
             return Response({'error': 'Asset not found'}, status=404)
 
         metadata = request.data
@@ -502,6 +495,41 @@ def download_asset(request, asset_name):
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
         print(f"Error in download_asset: {str(e)}")
+        return Response({'error': str(e)}, status=500)
+    
+@api_view(['GET'])
+def download_glb(request, asset_name):
+    """Downloads the GLB file associated with this asset. Used for displaying a preview of the model on the browser."""
+    try:
+        Asset.objects.get(assetName=asset_name)
+
+        s3 = S3Manager()
+        prefix = f"{asset_name}"
+        keys = s3.list_s3_files(prefix)
+
+        if not keys:
+            return Response({'error': 'No files found for this asset'}, status=404)
+        
+        glb_file_path = f"{prefix}/{asset_name}.glb"
+
+        if keys.count(glb_file_path) == 0:
+            return Response({'error': 'No .glb file found for this asset'}, status=404)
+        
+        glb_file_bytes = s3.download_s3_file(glb_file_path)
+
+        response = HttpResponse(
+            glb_file_bytes,
+            headers={
+                'Content-Type': 'model/gltf-binary'
+            }
+        )
+        
+        return response
+
+    except Asset.DoesNotExist:
+        return Response({'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        print(f"Error in download_glb: {str(e)}")
         return Response({'error': str(e)}, status=500)
 
 @api_view(['GET'])
