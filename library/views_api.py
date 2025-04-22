@@ -1,21 +1,18 @@
 import os
 import time
 import uuid
+import traceback
 from datetime import datetime
 
-from django.http import StreamingHttpResponse
-from django.utils import timezone
-from django.db import connection
-from django.db.models import Q, Max, Min, OuterRef, Subquery, Prefetch
-
+from django.db import connection, transaction
+from django.db.models import BooleanField, Case, F, Max, Min, OuterRef, Prefetch, Q, Subquery, When
+from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Asset, Author, Commit, Sublayer, Keyword
+from .models import Asset, Author, Commit, Keyword, Sublayer
 from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
-
-# from tests import UsdTest
 
 @api_view(['GET'])
 def get_assets(request):
@@ -295,10 +292,12 @@ def post_metadata(request, asset_name):
             keyword, created = Keyword.objects.get_or_create(keyword=keyword.lower())
             asset.keywordsList.add(keyword)
 
-        author = Author.objects.filter(pennkey=commit["author"]).first()
+        author = Author.objects.filter(username=commit["author"]).first()
 
         if author is None:
-            author = Author(pennkey=commit["author"], firstName="", lastName="")
+            author = Author(username=commit["author"], firstName="", lastName="")
+            # DEFAULT PASSWORD set as "password"
+            author.set_password("password")
             author.save()
             print(f"Author {commit['author']} not found, created new author.")
 
@@ -351,7 +350,7 @@ def put_metadata(request, asset_name, new_version):
         db_asset = None
         try:
             db_asset = Asset.objects.get(assetName=asset_name)
-        except Asset.DoesNotExist as e:
+        except Asset.DoesNotExist:
             return Response({'error': 'Asset not found'}, status=404)
 
         metadata = request.data
@@ -382,10 +381,12 @@ def put_metadata(request, asset_name, new_version):
 
         # Add a new commit
         commit = metadata["commit"]
-        author = Author.objects.filter(pennkey=commit["author"]).first()
+        author = Author.objects.filter(username=commit["author"]).first()
 
         if author is None:
-            author = Author(pennkey=commit["author"], firstName="", lastName="")
+            author = Author(username=commit["author"], firstName="", lastName="")
+            # DEFAULT PASSWORD set as "password"
+            author.set_password("password")
             author.save()
             print(f"Author {commit['author']} not found, created new author.")
 
@@ -405,75 +406,94 @@ def put_metadata(request, asset_name, new_version):
 # TODO: This is a temporary endpoint for testing. Once we have a proper auth system, we should use that.
 @api_view(['POST'])
 def checkout_asset(request, asset_name):
+    # --- performance profiling --------------------------------
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+    # -----------------------------------------------------------
+
     try:
         print(f"Request data: {request.data}")
         print(f"Request headers: {request.headers}")
-        
-        # Get the asset
-        try:
-            asset = Asset.objects.get(assetName=asset_name)
-            print(f"Found asset: {asset.assetName}")
-        except Asset.DoesNotExist as e:
-            print(f"Asset not found: {asset_name}")
-            return Response({'error': 'Asset not found'}, status=404)
-        
-        # Get the user's pennkey from the request
-        pennkey = request.data.get('pennkey')
-        print(f"Received pennkey: {pennkey}")
-        
-        if not pennkey:
-            return Response({'error': 'pennkey is required'}, status=400)
 
-        # Check if asset is already checked out
-        if asset.checkedOutBy:
-            print(f"Asset already checked out by: {asset.checkedOutBy}")
-            return Response({
-                'error': f'Asset is already checked out by {asset.checkedOutBy.firstName} {asset.checkedOutBy.lastName}'
-            }, status=400)
+        with transaction.atomic():  # row‑level lock scope
+            # Fetch & lock the asset (opt ① + ② already in place)
+            try:
+                asset = (Asset.objects
+                               .select_related('checkedOutBy')
+                               .select_for_update()
+                               .get(assetName=asset_name))
+            except Asset.DoesNotExist:
+                return Response({'error': 'Asset not found'}, status=404)
 
-        # Get the user
-        try:
-            user = Author.objects.get(pennkey=pennkey)
-            print(f"Found user: {user.firstName} {user.lastName}")
-        except Author.DoesNotExist as e:
-            print(f"User not found: {pennkey}")
-            return Response({'error': 'User not found'}, status=404)
+            pennkey = request.data.get('pennkey')
+            if not pennkey:
+                return Response({'error': 'pennkey is required'}, status=400)
 
-        # Check out the asset
-        try:
+            # If already checked out → 400
+            if asset.checkedOutBy:
+                who = asset.checkedOutBy
+                return Response(
+                    {'error': f'Asset is already checked out by {who.firstName} {who.lastName}'},
+                    status=400,
+                )
+
+            # Fetch the user
+            try:
+                user = Author.objects.get(username=pennkey)
+            except Author.DoesNotExist:
+                return Response({'error': 'User not found'}, status=404)
+
+            # ---------- perform checkout ----------
             asset.checkedOutBy = user
-            asset.save()
-            print("Asset checked out successfully")
-        except Exception as e:
-            print(f"Error saving asset: {str(e)}")
-            raise
+            asset.save(update_fields=['checkedOutBy'])           # optimisation ③
+
+            (Sublayer.objects
+                     .filter(asset=asset, checkedOutBy__isnull=True)  # optimisation ④
+                     .update(checkedOutBy=user))
 
         return Response({
-            'message': 'Asset checked out successfully',
+            'message': 'Asset and sublayers checked out successfully',
             'asset': {
                 'name': asset.assetName,
                 'checkedOutBy': user.pennkey,
-                'isCheckedOut': True
-            }
+                'isCheckedOut': True,
+            },
         })
 
     except Exception as e:
         print(f"Unexpected error in checkout_asset: {str(e)}")
         return Response({'error': str(e)}, status=500)
 
+    finally:
+        end_time = time.perf_counter()
+        queries_used = len(connection.queries) - initial_query_count
+        print(f"[PERF DEBUG] checkout_asset took {end_time - start_time:.4f}s and used {queries_used} queries.")
+
 @api_view(['GET'])
 def download_asset(request, asset_name):
     """Stream a zipped version of the entire asset folder from S3."""
+
+    t0 = time.perf_counter()
+    print(f"[DEBUG] download_asset called with asset_name='{asset_name}'")
+
     try:
         # Make sure the asset exists in the DB first (helps 404 early)
-        Asset.objects.get(assetName=asset_name)
+        try: 
+            Asset.objects.get(assetName=asset_name)
+            print("[DEBUG] Asset exists in DB")
+        except: 
+            print("[DEBUG] Asset not found in DB")
+            return Response({'error': 'Asset not found'}, status=404)
 
+        t1 = time.perf_counter(); 
         s3 = S3Manager()
         prefix = f"{asset_name}"
         keys = s3.list_s3_files(prefix)
 
         if not keys:
             return Response({'error': 'No files found for this asset'}, status=404)
+        else:
+            print(f"[DEBUG] Found {len(keys)} file(s) in S3 under prefix")
 
         file_data = {}
         for key in keys:
@@ -482,15 +502,56 @@ def download_asset(request, asset_name):
             file_data[name_in_zip] = file_bytes
 
         zip_buffer = zip_files_from_memory(file_data)
+        print(f"[DEBUG] Zipped {len(file_data)} file(s), buffer size = {zip_buffer.getbuffer().nbytes} bytes")
+        elapsed = time.perf_counter() - t1; 
+        print(f"[DEBUG] Finding and zipping files finished in {elapsed:.3f}s")
 
         response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
         response['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
+        elapsed = time.perf_counter() - t0
+        print(f"[PERF] download_asset finished in {elapsed:.3f}s")
         return response
 
     except Asset.DoesNotExist:
         return Response({'error': 'Asset not found'}, status=404)
     except Exception as e:
-        print(f"Error in download_asset: {str(e)}")
+        print(f"[FATAL] Error in download_asset: {str(e)}")
+        traceback.print_exc()
+        return Response({'error': str(e)}, status=500)
+    
+@api_view(['GET'])
+def download_glb(request, asset_name):
+    """Downloads the GLB file associated with this asset. Used for displaying a preview of the model on the browser."""
+    try:
+        Asset.objects.get(assetName=asset_name)
+
+        s3 = S3Manager()
+        prefix = f"{asset_name}"
+        keys = s3.list_s3_files(prefix)
+
+        if not keys:
+            return Response({'error': 'No files found for this asset'}, status=404)
+        
+        glb_file_path = f"{prefix}/{asset_name}.glb"
+
+        if keys.count(glb_file_path) == 0:
+            return Response({'error': 'No .glb file found for this asset'}, status=404)
+        
+        glb_file_bytes = s3.download_s3_file(glb_file_path)
+
+        response = HttpResponse(
+            glb_file_bytes,
+            headers={
+                'Content-Type': 'model/gltf-binary'
+            }
+        )
+        
+        return response
+
+    except Asset.DoesNotExist:
+        return Response({'error': 'Asset not found'}, status=404)
+    except Exception as e:
+        print(f"Error in download_glb: {str(e)}")
         return Response({'error': str(e)}, status=500)
 
 @api_view(['GET'])
@@ -566,16 +627,110 @@ def get_users(request):
 
 @api_view(['GET'])
 def get_user(request, pennkey):
+    # Start the timer and capture initial query count
+    start_time = time.perf_counter()
+    initial_query_count = len(connection.queries)
+
     try:
-        author = Author.objects.get(pennkey=pennkey)
-        
+        # Get number of recent commits to return (default to 5)
+        num_recent_commits = int(request.GET.get('recent_commits', 5))
+        if num_recent_commits < 1:
+            num_recent_commits = 5  # Ensure at least 1 commit is returned
+
+        # Get the author with prefetched related data in one query
+        author = (
+            Author.objects
+            .prefetch_related(
+                Prefetch(
+                    'commits',
+                    queryset=Commit.objects
+                        .select_related('asset')
+                        .order_by('-timestamp')[:num_recent_commits],
+                    to_attr='recent_commits'
+                )
+            )
+            .get(username=pennkey)
+        )
+
+        # Get both created and checked out assets in a single query with annotations
+        assets = (
+            Asset.objects
+            .filter(commits__author=author)
+            .annotate(
+                first_commit_date=Min('commits__timestamp'),
+                last_commit_date=Max('commits__timestamp'),
+                is_created_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('first_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
+                ),
+                is_checked_out_by_user=Case(
+                    When(
+                        commits__author=author,
+                        commits__timestamp=F('last_commit_date'),
+                        then=True
+                    ),
+                    default=False,
+                    output_field=BooleanField()
+                )
+            )
+            .distinct()
+        )
+
+        # Separate assets into created and checked out
+        created_assets = [asset for asset in assets if asset.is_created_by_user]
+        checked_out_assets = [asset for asset in assets if asset.is_checked_out_by_user]
+
+        # Format the response with all the required information
         user_data = {
-            'pennId': author.pennkey,
+            'pennKey': author.pennkey,
             'fullName': f"{author.firstName} {author.lastName}".strip() or author.pennkey,
+            'assetsCreated': [
+                {
+                    'name': asset.assetName,
+                    'createdAt': asset.first_commit_date.isoformat()
+                }
+                for asset in created_assets
+            ],
+            'checkedOutAssets': [
+                {
+                    'name': asset.assetName,
+                    'checkedOutAt': asset.last_commit_date.isoformat() if asset.last_commit_date else None
+                }
+                for asset in checked_out_assets
+            ],
+            'recentCommits': [
+                {
+                    'assetName': commit.asset.assetName,
+                    'version': commit.version,
+                    'note': commit.note,
+                    'timestamp': commit.timestamp.isoformat()
+                }
+                for commit in author.recent_commits
+            ]
         }
 
         return Response({'user': user_data})
+
     except Author.DoesNotExist:
         return Response({'error': 'User not found'}, status=404)
+    except ValueError:
+        return Response({'error': 'recent_commits parameter must be a positive integer'}, status=400)
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+    finally:
+        # Performance logging
+        end_time = time.perf_counter()
+        elapsed_seconds = end_time - start_time
+
+        final_query_count = len(connection.queries)
+        queries_used = final_query_count - initial_query_count
+
+        print(
+            f"[PERF DEBUG] get_user took {elapsed_seconds:.4f} seconds "
+            f"and used {queries_used} DB queries."
+        )

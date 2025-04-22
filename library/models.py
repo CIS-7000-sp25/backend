@@ -1,5 +1,6 @@
 import uuid
 from django.db import models
+from django.contrib.auth.models import AbstractUser
 
 # Create your models here.
 
@@ -15,12 +16,15 @@ class StatusTag(models.Model):
     def __str__(self):
         return self.statusTag
     
-class Author(models.Model):
-    pennkey = models.CharField(max_length=200, primary_key=True)
+class Author(AbstractUser):
     firstName= models.CharField(max_length=200, default="")
     lastName= models.CharField(max_length=200, default="")
     email= models.CharField(max_length=200, default="")
 
+    @property
+    def pennkey(self):
+        return self.username
+    
     def __str__(self):
         return f"{self.firstName} {self.lastName} ({self.pennkey})"
     
@@ -29,6 +33,7 @@ class Asset(models.Model):
     assetName = models.CharField(max_length=200)
     keywordsList = models.ManyToManyField(Keyword)
     hasTexture = models.BooleanField(default=False)
+    # DEPRECATED: use checkedOutBy in Sublayer instead
     checkedOutBy = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
     thumbnailKey = models.CharField(max_length=200, blank=True, null=True)
     
@@ -41,6 +46,7 @@ class Sublayer(models.Model):
     s3id = models.CharField(max_length=1024)
     version = models.CharField(max_length=32)
     sublayerName = models.CharField(max_length=200)
+    checkedOutBy = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
     filepath = models.CharField(max_length=200)    
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE)
     internalDependencies = models.ManyToManyField('self', blank=True, symmetrical=False, related_name='internal_dependents')
@@ -53,7 +59,7 @@ class Sublayer(models.Model):
 
 class Commit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
+    author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True, related_name='commits')
     version = models.CharField(max_length=32)
     timestamp = models.DateTimeField()
     note = models.TextField()
