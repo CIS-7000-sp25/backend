@@ -40,3 +40,18 @@ class S3Manager:
     def download_s3_file(self, key):
         obj = self.client.get_object(Bucket=self.bucket, Key=key)
         return obj['Body'].read()  # this returns bytes
+
+    def check_if_exists(self, key) -> bool:
+        """
+        Returns True if the object `key` is present in the bucket, False otherwise.
+        Re‑raises unexpected AWS errors so the caller can handle them.
+        """
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=key)
+            return True                    # object exists
+        except self.client.exceptions.NoSuchKey:
+            return False                   # bucket is fine, key not found
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                return False               # older boto3 versions raise ClientError for 404
+            raise       
