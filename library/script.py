@@ -7,7 +7,7 @@ import json
 import subprocess
 from django.conf import settings
 
-folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 4 Assets")
+folder_path = Path("C:\\Users\\njbhv\\Downloads\\Week 10 Assets")
 folder_path2 = Path("C:\\Users\\njbhv\\Downloads\\Final Assets v2\\Assets")
 
 class Script:

@@ -10,7 +10,7 @@ from django.http import HttpResponse, StreamingHttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .models import Asset, Author, Commit, Sublayer, Keyword
+from .models import Asset, Author, Commit, Keyword, Sublayer
 from .utils.s3_utils import S3Manager
 from .utils.zipper import zip_files_from_memory
 
