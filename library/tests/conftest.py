@@ -4,6 +4,15 @@ import pytest
 from pxr import Usd
 from pathlib import Path
 import os
+import sys
+
+library_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+print(f"📁 Adding to sys.path: {library_path}")
+sys.path.append(library_path)
+
+# Debugging output for sys.path
+print("sys.path:", sys.path)
 
 @pytest.fixture(scope="session")
 def asset_root():
