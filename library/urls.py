@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-from . import views, views_api, views_auth, views_upload
+from . import views, views_api, views_auth, views_upload, views_upload_metadata
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -14,9 +14,10 @@ urlpatterns = [
     # API views
     path('api/assets/', views_api.get_assets, name='api_assets'),
     path('api/assets/<str:asset_name>/', views_api.get_asset, name='api_asset'),
+    path('api/assets/<str:asset_name>/verify/', views_upload.get_verify, name='api_asset_verify'),
     path('api/assets/<str:asset_name>/checkin/', views_upload.put_asset, name='api_asset_checkin'),
     path('api/assets/<str:asset_name>/upload/', views_upload.post_asset, name='api_asset_upload'),
-    path('api/metadata/<str:asset_name>/', views_api.post_metadata, name='api_metadata_upload'),
+    path('api/metadata/<str:asset_name>/upload', views_upload_metadata.post_asset_metadata, name='api_metadata_upload'),
     path('api/metadata/<str:asset_name>/', views_api.put_metadata, name='api_metadata_update'),
     path('api/assets/<str:asset_name>/checkout/', views_api.checkout_asset, name='api_asset_checkout'),
     path('api/assets/<str:asset_name>/download/', views_api.download_asset, name='api_asset_download'),

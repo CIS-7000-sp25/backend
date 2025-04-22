@@ -1,0 +1,20 @@
+#usda 1.0
+(
+    defaultPrim = "kitchenaid"
+    metersPerUnit = 0.01
+    upAxis = "Y"
+)
+
+def Xform "kitchenaid" (
+    assetInfo = {
+        string name = "kitchenaid"
+    }
+    kind = "component"
+    references = [
+        @./contrib/material/material.usda@,
+        @./contrib/geometry/geometry.usda@,
+    ]
+)
+{
+}
+

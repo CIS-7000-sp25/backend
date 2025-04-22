@@ -1,0 +1,22 @@
+#usda 1.0
+(
+    defaultPrim = "/campfire/Geometry"
+)
+
+def "campfire"
+{
+    def "Geometry"
+    {
+        def Xform "campfire_LOD2" (
+            prepend inherits = </campfire/Materials/MaterialClasses/class_Logs>
+        )
+        {
+            def Cylinder "cylinder"
+            {
+                float3 xformOp:scale = (100, 100, 25)
+                uniform token[] xformOpOrder = ["xformOp:scale"]
+            }
+        }
+    }
+}
+
