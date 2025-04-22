@@ -32,8 +32,6 @@ def post_asset(request, asset_name):
                         extracted_file, 
                         f"{asset_name}/{version}/{file_info.filename}"
                     )
-                    
-        s3.upload_fileobj(zip, f"{asset_name}/{version}/{asset_name}.zip")
 
         return Response({'message': 'Successfully uploaded'}, status=200)
     

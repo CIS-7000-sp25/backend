@@ -23,7 +23,6 @@ urlpatterns = [
     path('api/assets/<str:asset_name>/download/glb/', views_api.download_glb, name='api_asset_download_glb'),
     path('api/commits/', views_api.get_commits, name='get_commits'),
     path('api/commits/<str:commit_id>/', views_api.get_commit, name='get_commit'),
-    path('api/commits/assets/<str:asset_name>/', views_api.get_asset_commits, name='asset_commits'),
     path('api/users/', views_api.get_users, name='get_users'),
     path('api/users/<str:pennkey>/', views_api.get_user, name='get_user'),
     

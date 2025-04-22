@@ -63,7 +63,7 @@ class Commit(models.Model):
     version = models.CharField(max_length=32)
     timestamp = models.DateTimeField()
     note = models.TextField()
-    sublayers = models.ManyToManyField(Sublayer, blank=True, related_name = 'commits')
+    sublayers = models.ManyToManyField(Sublayer, blank=True)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='commits')
 
     def __str__(self):
