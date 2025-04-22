@@ -643,6 +643,69 @@ def get_commit(request, commit_id):
         return Response({'error': str(e)}, status=500)
 
 @api_view(['GET'])
+def get_asset_commits(request, asset_name):
+    """
+    GET /api/asset/<asset_name>/commits/
+    Returns every commit whose asset has the given name.
+    """
+    t0 = time.perf_counter()
+    initial_q = len(connection.queries)
+
+    try:
+        # 1. Ensure the asset exists (early 404)
+        if not Asset.objects.filter(assetName=asset_name).exists():
+            return Response({'error': 'Asset not found'}, status=404)
+
+        # 2. Pull commits efficiently
+        commits = (
+            Commit.objects
+                  .filter(asset__assetName=asset_name)
+                  .select_related('author', 'asset')      # avoid N+1 on FKs
+                  .prefetch_related('sublayers')          # avoid N+1 on M2M
+                  .annotate(                              # fast hasMaterials flag
+                      has_materials=Exists(
+                          Commit.sublayers.through.objects.filter(commit_id=OuterRef('pk'))
+                      )
+                  )
+                  .order_by('-timestamp')
+        )
+
+        commits_list = [
+            {
+                'commitId'   : str(c.id),
+                'pennKey'    : c.author.pennkey if c.author else None,
+                'versionNum' : c.version,
+                'notes'      : c.note,
+                'commitDate' : c.timestamp.isoformat(),
+                'hasMaterials': c.has_materials,
+                'state'      : [],
+                'assetName'  : c.asset.assetName,
+                'authorName' : f"{c.author.firstName} {c.author.lastName}" if c.author else None,
+                'authorEmail': c.author.email if c.author else None,
+                'assetId'    : str(c.asset.id),
+                'sublayers'  : [
+                    {
+                        'id'          : str(layer.id),
+                        'sublayerName': layer.sublayerName,
+                        'filepath'    : str(layer.filepath),
+                    }
+                    for layer in c.sublayers.all()
+                ],
+            }
+            for c in commits
+        ]
+
+        return Response({'commits': commits_list})
+
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+    finally:
+        elapsed = time.perf_counter() - t0
+        queries = len(connection.queries) - initial_q
+        print(f"[PERF] get_asset_commits({asset_name}) → {elapsed:.4f}s, {queries} DB queries")
+
+@api_view(['GET'])
 def get_users(request):
     try:
         authors = Author.objects.all().order_by('firstName', 'lastName')
