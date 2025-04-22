@@ -55,3 +55,32 @@ class S3Manager:
             if e.response["Error"]["Code"] == "404":
                 return False               # older boto3 versions raise ClientError for 404
             raise       
+
+    def get_latest_version(self, asset_name: str) -> str | None:
+        """
+        Scan the bucket for keys under  <asset_name>/<version>/...
+        Return the **highest** version string (e.g. "02.03.00") or None
+        if no version folders are found.
+
+        A version is compared numerically component‑wise, so
+        01.10.3 < 01.10.10 < 02.00.00 .
+        """
+        prefix = f"{asset_name}/"
+        versions: set[tuple[int, ...]] = set()
+
+        for key in self.list_s3_files(prefix):
+            parts = key.split("/")
+            if len(parts) >= 2 and parts[0] == asset_name:
+                ver_str = parts[1]
+                try:
+                    ver_tuple = tuple(int(p) for p in ver_str.split("."))
+                    versions.add(ver_tuple)
+                except ValueError:
+                    # Skip non‑numeric version folders such as "draft", "tmp", …
+                    pass
+
+        if not versions:
+            return None
+
+        latest_ver = max(versions)               # tuple comparison
+        return ".".join(str(n).zfill(2) for n in latest_ver)

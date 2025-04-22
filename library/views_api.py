@@ -483,110 +483,82 @@ def checkout_asset(request, asset_name):
         queries_used = len(connection.queries) - initial_query_count
         print(f"[PERF DEBUG] checkout_asset took {end_time - start_time:.4f}s and used {queries_used} queries.")
 
+
+def _stream_zip(content, asset_name, is_streaming_body=False):
+    """
+    Helper to build a StreamingHttpResponse.
+    `content` can be a botocore StreamingBody OR a BytesIO.
+    """
+    resp = StreamingHttpResponse(
+        streaming_content=content if is_streaming_body else iter(lambda: content.read(8 * 1024), b""),
+        content_type="application/zip",
+    )
+    resp['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
+    return resp
+
+
 @api_view(['GET'])
 def download_asset(request, asset_name):
     """
-    Stream the most‑recent version of <asset_name> as <asset_name>.zip.
+    Return the newest version of <asset_name> as <asset_name>.zip.
 
-    S3 layout expected:
-        {asset_name}/{version}/{asset_name}.zip      ← cached bundle
-        {asset_name}/{version}/...                   ← individual files (if no zip yet)
-
-    Version strings are compared numerically component‑wise, e.g.
-        01.02.10 < 01.03.00 < 02.00.00
+    • If {asset}/{version}/{asset}.zip exists (cache‑hit) – stream it directly.
+    • Else build a zip from that version’s loose files, upload it, then stream.
+    • Version strings are compared numerically component‑wise: 01.10.3 < 01.10.10 < 02.00.00.
     """
+
     t0 = time.perf_counter()
     print(f"[DEBUG] download_asset('{asset_name}')")
 
     try:
-        # ── 1. Early 404 if asset not in DB ─────────────────────────────────────
+        # 1. Verify asset exists in DB
         if not Asset.objects.filter(assetName=asset_name).exists():
-            print("[DEBUG] Asset not found in DB")
             return Response({'error': 'Asset not found'}, status=404)
-        print("[DEBUG] Asset exists in DB")
 
-        # ── 2. S3 setup ─────────────────────────────────────────────────────────
-        s3      = S3Manager()
-        prefix  = f"{asset_name}/"                     # root folder
-        all_keys = s3.list_s3_files(prefix)
-
-        if not all_keys:
+        # 2. Ask S3 which version is newest
+        s3 = S3Manager()
+        latest_version = s3.get_latest_version(asset_name)
+        if latest_version is None:
             return Response({'error': 'No files found for this asset'}, status=404)
 
-        # ── 3. Detect all zipped versions ───────────────────────────────────────
-        zipped = []  # list of (version_tuple, s3_key)
-        for key in all_keys:
-            # expecting "{asset_name}/{ver}/{asset_name}.zip"
-            parts = key.split('/')
-            if len(parts) == 3 and parts[0] == asset_name and parts[2] == f"{asset_name}.zip":
-                ver_str = parts[1]
-                try:
-                    ver_tuple = tuple(int(p) for p in ver_str.split('.'))
-                except ValueError:
-                    continue  # skip weird version names that aren’t numeric
-                zipped.append((ver_tuple, key))
+        print(f"[DEBUG] Latest version detected: {latest_version}")
 
-        # ── 4. Choose the highest version if any zip exists ─────────────────────
-        if zipped:
-            latest_zip_key = max(zipped, key=lambda t: t[0])[1]
-            print(f"[DEBUG] Cache‑hit: streaming '{latest_zip_key}'")
-            obj = s3.client.get_object(Bucket=s3.bucket, Key=latest_zip_key)
+        zip_key = f"{asset_name}/{latest_version}/{asset_name}.zip"
+        data_prefix = f"{asset_name}/{latest_version}/"
 
-            resp = StreamingHttpResponse(
-                streaming_content=obj['Body'],
-                content_type='application/zip'
-            )
-            resp['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
+        # 3. Fast path – cached zip exists
+        if s3.check_if_exists(zip_key):
+            print(f"[DEBUG] Cache‑hit – streaming '{zip_key}'")
+            obj = s3.client.get_object(Bucket=s3.bucket, Key=zip_key)
+            return _stream_zip(obj['Body'], asset_name, is_streaming_body=True)
 
-            print(f"[PERF] download_asset cache‑hit → {time.perf_counter()-t0:.3f}s")
-            return resp
+        # 4. Cache‑miss – list loose files under latest version
+        keys = s3.list_s3_files(data_prefix)
+        if not keys:
+            return Response({'error': 'Latest version folder is empty'}, status=500)
 
-        # ── 5. No pre‑built zip → find latest **loose** version folder ──────────
-        # footprints look like "{asset}/{ver}/something"
-        loose_versions = set()
-        for key in all_keys:
-            parts = key.split('/')
-            if len(parts) >= 2 and parts[0] == asset_name:
-                ver_str = parts[1]
-                try:
-                    ver_tuple = tuple(int(p) for p in ver_str.split('.'))
-                    loose_versions.add((ver_tuple, ver_str))
-                except ValueError:
-                    pass
+        print(f"[DEBUG] Cache‑miss – bundling {len(keys)} objects")
 
-        if not loose_versions:
-            return Response({'error': 'Asset files do not follow version pattern'}, status=500)
-
-        latest_ver_tuple, latest_ver_str = max(loose_versions, key=lambda t: t[0])
-        latest_prefix = f"{asset_name}/{latest_ver_str}/"
-        keys = [k for k in all_keys if k.startswith(latest_prefix)]
-
-        print(f"[DEBUG] Cache‑miss: bundling {len(keys)} objects from version {latest_ver_str}")
-
-        # ── 6. Build zip in memory ──────────────────────────────────────────────
+        # 5. Build zip in memory
         zip_buffer = io.BytesIO()
-        with ZipFile(zip_buffer, 'w', ZIP_DEFLATED) as zf:
+        with ZipFile(zip_buffer, mode='w', compression=ZIP_DEFLATED) as zf:
             for key in keys:
-                arc_name   = os.path.relpath(key, latest_prefix)  # strip version folder
-                file_bytes = s3.download_s3_file(key)
-                zf.writestr(arc_name, file_bytes)
+                arc_name = os.path.relpath(key, data_prefix)
+                zf.writestr(arc_name, s3.download_s3_file(key))
         zip_buffer.seek(0)
         print(f"[DEBUG] ZIP built ({zip_buffer.getbuffer().nbytes} bytes)")
 
-        # ── 7. Upload the new zip (cache‑fill) ──────────────────────────────────
-        zip_key = f"{asset_name}/{latest_ver_str}/{asset_name}.zip"
+        # 6. Upload new zip back to S3 (best‑effort)
         try:
             s3.upload_fileobj(zip_buffer, zip_key)
-            print(f"[DEBUG] Uploaded ZIP back to S3 as '{zip_key}'")
+            print(f"[DEBUG] Uploaded new cache file '{zip_key}'")
             zip_buffer.seek(0)  # rewind for response
         except Exception as e:
             print(f"[WARN] Could not upload ZIP cache: {e}")
 
-        # ── 8. Stream response ──────────────────────────────────────────────────
-        resp = StreamingHttpResponse(zip_buffer, content_type='application/zip')
-        resp['Content-Disposition'] = f'attachment; filename="{asset_name}.zip"'
-
-        print(f"[PERF] download_asset cache‑miss → {time.perf_counter()-t0:.3f}s")
+        # 7. Stream response
+        resp = _stream_zip(zip_buffer, asset_name)
+        print(f"[PERF] download_asset (cache‑miss) -> {time.perf_counter() - t0:.3f}s")
         return resp
 
     except Exception as e:
