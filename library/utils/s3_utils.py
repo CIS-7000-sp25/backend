@@ -84,3 +84,12 @@ class S3Manager:
 
         latest_ver = max(versions)               # tuple comparison
         return ".".join(str(n).zfill(2) for n in latest_ver)
+    
+    def copy_file(self, src_key: str, dest_key: str):
+        """Server‑side copy within the same bucket."""
+        self.client.copy_object(
+            Bucket=self.bucket,
+            CopySource={'Bucket': self.bucket, 'Key': src_key},
+            Key=dest_key,
+        )
+    
