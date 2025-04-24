@@ -52,3 +52,6 @@ class S3Manager:
             else:
                 pass # not implemented yet
         
+    def delete_object(self, key):
+        """PLEASE be confident before you use!"""
+        self.client.delete_object(Bucket="usd-asset-versions-dump", Key=key)
