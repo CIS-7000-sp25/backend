@@ -10,6 +10,7 @@ class S3Manager:
             region_name=settings.AWS_REGION
         )
         self.bucket = settings.AWS_BUCKET_NAME
+        self.resource = boto3.resource('s3')
 
     def generate_presigned_url(self, key, expires_in=60):
         return self.client.generate_presigned_url(
@@ -40,3 +41,14 @@ class S3Manager:
     def download_s3_file(self, key):
         obj = self.client.get_object(Bucket=self.bucket, Key=key)
         return obj['Body'].read()  # this returns bytes
+    
+    def get_s3_versionID(self, key, latest=True):
+        resp = self.client.list_object_versions(Prefix=key, Bucket=self.bucket)
+
+        for obj in [*resp['Versions'], *resp.get('DeleteMarkers', [])]:
+            if latest:
+                if obj['IsLatest']:
+                    return obj['VersionId']
+            else:
+                pass # not implemented yet
+        
