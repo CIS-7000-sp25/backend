@@ -2,15 +2,18 @@ from django.db.models import Prefetch, OuterRef
 from django.core.management.base import BaseCommand
 from library.models import Asset, Sublayer, Commit, Keyword
 from library.utils.s3_utils import S3Manager
-from datetime import datetime
+from datetime import datetime, MINYEAR, timezone, timedelta
 import os
 import ast
-import uuid
+import re
+import click
 
 """
 python manage.py refactor sublayer --destructive
 python manage.py refactor commit --destructive
 """
+
+DT_FMT="%m-%d-%Y %H:%M:%S%:z"
 
 class Command(BaseCommand):
     help = """Easily refactor database. Usage: 'python manage.py refactor {sublayer, commit}"""
@@ -36,47 +39,43 @@ class Command(BaseCommand):
                 self.refactorCommit(options['destructive'])
 
     def refactorCommit(self, destructive:bool=False):
-        if destructive:
-            for asset in Asset.objects.all():
-                if asset.assetName in ["we", "rrrrr", "ww"]:
-                    print("Deleting...", asset.assetName)
-                    asset.delete()
-                elif len(Commit.objects.filter(asset=asset)) != 0:
-                    first_author = Commit.objects.filter(asset=asset).order_by('timestamp')[0].author
-                    latestCommit = Commit.objects.filter(asset=asset).order_by('-timestamp')[0]
-                    newVersionInt = (int(latestCommit.version[1]) + 1)
-
-                    newCommit = Commit(author=first_author, version=f"0{newVersionInt}.00.00", timestamp=datetime.now().strftime('%Y-%m-%d 12:21:35+00:00'), note="Refactor to final project structure", asset=asset)
-                    newCommit.save()
-                    sublayers = Sublayer.objects.filter(asset=asset)
-                    newCommit.sublayers.set(sublayers)
-                    newCommit.save()
-                    print(newCommit, newCommit.author, newCommit.timestamp)
-                    print([sublayer for sublayer in newCommit.sublayers.all()])
-
-                    newCommit.save()
-
         commits = Commit.objects.all()
-        
-        for commit in commits:
-            vers = commit.version
-            if len(vers) == 3:
-                match vers:
-                    case "1.0":
-                        commit.version = "01.00.00"
-                    case "1.1":
-                        commit.version = "02.00.00"
-                    case "1.2":
-                        commit.version = "03.00.00"
-                    case "1.3":
-                        commit.version = "04.00.00"
-                    case "1.4":
-                        commit.version = "05.00.00"
-            if len(vers) == 7:
-                commit.version = f"0{commit.version}"
 
-                print(commit.version)
-                commit.save()
+        if click.confirm(f"Fixing timestamp-related commit history. Continue?"):
+            for asset in Asset.objects.all():
+                prevCommitTimestamp = datetime.min.replace(tzinfo=timezone.utc)
+                for commit in Commit.objects.filter(asset=asset).order_by('version'):
+                    currCommitTimestamp = commit.timestamp
+                    if currCommitTimestamp < prevCommitTimestamp:
+                        print(f"DETECTED: {asset.assetName} commit version {commit.version} timestamp is {currCommitTimestamp}, but a prior commit's timestamp is {prevCommitTimestamp}.")
+                        if click.confirm(f"Fixing strange timestamps in {asset.assetName} commit history. Continue?"):
+                            commit.timestamp = prevCommitTimestamp + timedelta(seconds=1)
+                            commit.save()
+                            print(f"New Current: {commit.timestamp}, Prev: {prevCommitTimestamp}")
+                    prevCommitTimestamp = commit.timestamp
+                click.echo(f"{asset.assetName} is clear!")
+            
+        
+        if click.confirm('Refactoring 1.x commit versions to 0x.00.00 versions. Is this necessary?'):
+            for asset in Asset.objects.all():
+                click.echo(f"{asset.assetName}:")
+                currStandardizedVersion = "01.00.00"
+                for commit in Commit.objects.filter(asset=asset).order_by('version'):
+                    oldVers = commit.version
+                    if not re.match(r"^\d{2}\.00\.00$", oldVers):
+                        commit.version = currStandardizedVersion
+                        commit.save()
+                        print(f"    Fixing... Old version: {oldVers}, standardized version: {commit.version}")
+                    currStandardizedVersion = f"0{int(currStandardizedVersion[1]) + 1}.00.00"
+
+                click.echo(f"   {asset.assetName} is clear!")
+
+        if click.confirm('Clearing sublayers list of all commit objects. Do you want to continue?'):
+            for commit in Commit.objects.all():
+                if len(commit.sublayers.all()) != 0:
+                    click.echo(f"Clearing commit sublayers of {commit.asset.assetName}, version {commit.version}...")
+                    commit.sublayers.clear()
+                    click.echo("Successful")
 
     def refactorSublayer(self, destructive: bool=False):
         s3 = S3Manager()
