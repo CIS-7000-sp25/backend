@@ -5,6 +5,19 @@ from typing import List
 import zipfile
 import re
 
+
+class VerifySerializer(serializers.Serializer):
+    file = serializers.FileField(required=True)
+
+class UploadSerializer(serializers.Serializer):
+    file = serializers.FileField(required=True)
+    note = serializers.CharField(required=True)
+    version = serializers.CharField(required=True)
+    hasTexture = serializers.BooleanField(required=True)
+    keywordsRawList = serializers.ListField(
+        child=serializers.CharField(), required=False
+    )
+
 class AssetSerializer(serializers.ModelSerializer):
     keywordsRawList = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
 

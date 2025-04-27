@@ -1,8 +1,10 @@
 from rest_framework.decorators import api_view
+from rest_framework.decorators import parser_classes
 from rest_framework.response import Response, Serializer
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
+from rest_framework.parsers import MultiPartParser
 
 from pxr import Usd
 import zipfile
@@ -10,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from library.models import Asset
-from library.serializers import CommitSerializer, AssetSerializer
+from library.serializers import CommitSerializer, AssetSerializer, UploadSerializer, VerifySerializer
 
 from library.usd_validation import (
     core, geometry, materials, references, structure
@@ -87,28 +89,24 @@ def validate_zip(request):
         
         return result
 
-@swagger_auto_schema(method='post', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 500: Serializer}) # include responses for Swagger docs
+@swagger_auto_schema(method='post', request_body=VerifySerializer, consumes=["multipart/form-data"], responses={200: Serializer, 400: Serializer, 500: Serializer}) # include responses for Swagger docs
 @api_view(['POST'])
+@parser_classes([MultiPartParser])
 def get_verify(request, asset_name):
-    asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
-    serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
-
-    if serializer.is_valid():
-        try:
-            print("you hit it")
-            result, error_msg = validate_zip(request)
-            if result:
-                return Response({'success': True, 'message': "Passed validation!"}, status=200) 
-            else:
-                return Response({'success': False, 'message': error_msg}, status=400) 
-        except Exception as e:
-            return Response({'success': False, 'message': str(e)}, status=500)
-    else:
-        return Response(serializer.errors, status=400)
+    try:
+        print("you hit it")
+        result, error_msg = validate_zip(request)
+        if result:
+            return Response({'success': True, 'message': "Passed validation!"}, status=200) 
+        else:
+            return Response({'success': False, 'message': error_msg}, status=400) 
+    except Exception as e:
+        return Response({'success': False, 'message': str(e)}, status=500)
 
 
-@swagger_auto_schema(method='post', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 500: Serializer})
+@swagger_auto_schema(method='post', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: Serializer, 400: Serializer, 500: Serializer})
 @api_view(['POST'])
+@parser_classes([MultiPartParser])
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
@@ -121,10 +119,6 @@ def post_asset(request, asset_name):
             commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
             if not commit_serializer.is_valid():
                 return Response({'success': False, 'message': commit_serializer.errors}, status=400)
-
-            result, error_msg = validate_zip(request)
-            if not result:
-                raise Exception(f"Error validating USD files: {error_msg}")  # Raise to trigger rollback
 
             commit = commit_serializer.save()
 

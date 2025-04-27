@@ -157,13 +157,11 @@ STATIC_URL = "static/"
 
 # Only necessary in development.
 # Tells third-party apps a single folder where static files have been compiled to.
-if not DEBUG:
-    STATIC_ROOT = BASE_DIR / "static"
-else:
+STATIC_ROOT = os.path.join(BASE_DIR, 'var', 'static')
 # Additional directories that can be catered per app for django to search for files
-    STATICFILES_DIRS = [
-        BASE_DIR / "static",
-    ]
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static')
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
