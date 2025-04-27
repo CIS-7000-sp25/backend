@@ -1,6 +1,9 @@
 import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from datetime import datetime, timezone
+
+DT_FMT="%Y-%m-%d %H:%M:%S%:z"
 
 # Create your models here.
 
@@ -43,11 +46,11 @@ class Asset(models.Model):
     
 class Sublayer(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    version = models.CharField(max_length=32)
+    version = models.CharField(max_length=32, db_index=True)
     s3_versionID = models.CharField(max_length=64, null=True, blank=True)
     sublayerName = models.CharField(max_length=200)
     checkedOutBy = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True)
-    filepath = models.CharField(max_length=200)    
+    filepath = models.CharField(max_length=200, db_index=True)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE)
     internalDependencies = models.ManyToManyField('self', blank=True, symmetrical=False, related_name='internal_dependents')
     externalDependencies = models.ManyToManyField(Asset, blank=True, related_name='dependents')
@@ -60,8 +63,8 @@ class Sublayer(models.Model):
 class Commit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     author = models.ForeignKey(Author, on_delete=models.SET_NULL, null=True, blank=True, related_name='commits')
-    version = models.CharField(max_length=32)
-    timestamp = models.DateTimeField()
+    version = models.CharField(max_length=32, db_index=True)
+    timestamp = models.DateTimeField(default=datetime.now().replace(tzinfo=timezone.utc).strftime(DT_FMT), db_index=True)
     note = models.TextField()
     sublayers = models.ManyToManyField(Sublayer, blank=True)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='commits')

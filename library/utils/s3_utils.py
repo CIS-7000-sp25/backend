@@ -20,10 +20,14 @@ class S3Manager:
         )
     
     def update_file(self, file, key):
+        """Better for small objects. Returns response which contains versionID as response.get('VersionId)"""
         return self.client.put_object(Body=file, Bucket=self.bucket, Key=key)
 
-    def upload_fileobj(self, file, key):
+    def upload_fileobj(self, file, key) -> str:
+        """Better for large objects. Returns response using `head_object` which contains versionID as response.get('VersionId)"""
         self.client.upload_fileobj(file, self.bucket, key)
+        response = self.client.head_object(Bucket=self.bucket, Key=key)
+        return response
     
     def delete_file(self, key):
         self.client.delete_object(Bucket=self.bucket, Key=key)
