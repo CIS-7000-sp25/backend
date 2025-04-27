@@ -43,7 +43,6 @@ class Asset(models.Model):
     
 class Sublayer(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    s3id = models.CharField(max_length=1024)
     version = models.CharField(max_length=32)
     s3_versionID = models.CharField(max_length=64, null=True, blank=True)
     sublayerName = models.CharField(max_length=200)
@@ -53,7 +52,7 @@ class Sublayer(models.Model):
     internalDependencies = models.ManyToManyField('self', blank=True, symmetrical=False, related_name='internal_dependents')
     externalDependencies = models.ManyToManyField(Asset, blank=True, related_name='dependents')
     status = models.ManyToManyField(StatusTag, blank=True)
-    previousVerion = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='nextVersions')
+    previousVersion = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='futureVersions')
 
     def __str__(self):
         return f"{self.sublayerName} - {self.asset.assetName}"

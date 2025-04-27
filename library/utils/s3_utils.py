@@ -28,11 +28,11 @@ class S3Manager:
     def delete_file(self, key):
         self.client.delete_object(Bucket=self.bucket, Key=key)
 
-    def list_s3_files(self, prefix):
+    def list_s3_files(self, prefix, bucket="cis-7000-usd-assets"):
         paginator = self.client.get_paginator('list_objects_v2')
         result = []
 
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             for obj in page.get('Contents', []):
                 result.append(obj['Key'])
 
@@ -42,8 +42,8 @@ class S3Manager:
         obj = self.client.get_object(Bucket=self.bucket, Key=key)
         return obj['Body'].read()  # this returns bytes
     
-    def get_s3_versionID(self, key, latest=True):
-        resp = self.client.list_object_versions(Prefix=key, Bucket=self.bucket)
+    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets", latest=True):
+        resp = self.client.list_object_versions(Prefix=key, Bucket=bucket)
 
         for obj in [*resp['Versions'], *resp.get('DeleteMarkers', [])]:
             if latest:
@@ -52,6 +52,6 @@ class S3Manager:
             else:
                 pass # not implemented yet
         
-    def delete_object(self, key):
+    def delete_object(self, key, bucket="cis-7000-usd-assets"):
         """PLEASE be confident before you use!"""
-        self.client.delete_object(Bucket="usd-asset-versions-dump", Key=key)
+        self.client.delete_object(Bucket=bucket, Key=key)
