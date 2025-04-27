@@ -12,10 +12,10 @@ class S3Manager:
         self.bucket = settings.AWS_BUCKET_NAME
         self.resource = boto3.resource('s3')
 
-    def generate_presigned_url(self, key, expires_in=60):
+    def generate_presigned_url(self, key, expires_in=60, bucket="cis-7000-usd-assets"):
         return self.client.generate_presigned_url(
             'get_object',
-            Params={'Bucket': self.bucket, 'Key': key}, # relative path to bucket
+            Params={'Bucket': bucket, 'Key': key}, # relative path to bucket
             ExpiresIn=expires_in
         )
     
