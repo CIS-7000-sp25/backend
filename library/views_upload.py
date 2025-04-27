@@ -85,7 +85,7 @@ def validate_zip(request):
                     newStatus: bool = result[0] and fileResult[0]
                     newMessage: str = result[1]
                     if not fileResult[0]:
-                        newMessage: str = f"{newMessage}\n\n" + f"{fileResult[1]}\n\n"
+                        newMessage: str = f"{newMessage}" + f"\n{fileResult[1]}\n"
 
                     result = (newStatus, newMessage)
 
