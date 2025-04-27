@@ -6,23 +6,6 @@ from rest_framework_simplejwt.views import (
 
 from . import views, views_api, views_auth, views_upload, views_upload_metadata
 
-from rest_framework import permissions
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
-from django.urls import re_path
-
-schema_view = get_schema_view(
-   openapi.Info(
-      title="Papaya API",
-      default_version='v1',
-      description='API of 2025 CIS 7000 "Papaya" asset browser.',
-      terms_of_service="https://www.google.com/policies/terms/",
-      license=openapi.License(name="BSD License"),
-   ),
-   public=True,
-   permission_classes=(permissions.AllowAny,),
-)
-
 urlpatterns = [
     path('', views.home, name='home'),
     path('asset/<str:asset_name>/', views.asset_detail, name='asset_detail'),
@@ -49,7 +32,4 @@ urlpatterns = [
     # testing purposes only
     path('api/protected/', views_auth.ProtectedView.as_view(), name='protected'),
     path('api/protected2/', views_auth.protected_view, name='protected2'),
-
-    re_path(r'^playground/$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    re_path(r'^docs/$', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc')
 ]
