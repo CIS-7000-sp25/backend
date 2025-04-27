@@ -51,7 +51,8 @@ INSTALLED_APPS = [
     "corsheaders",
     "library",
     'silk',
-    "drf_yasg"
+    "drf_yasg",
+    "whitenoise.runserver_nostatic", 
 ]
 
 MIDDLEWARE = [
@@ -64,6 +65,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     'silk.middleware.SilkyMiddleware',
+    "whitenoise.middleware.WhiteNoiseMiddleware",
 ]
 
 ROOT_URLCONF = "asset_library.urls"
@@ -162,6 +164,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'var', 'static')
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static')
 ]
+STATICFILES_STORAGE="whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

@@ -43,3 +43,4 @@ inflection==0.5.1
 pytz==2025.2
 pyyaml==6.0.2
 uritemplate==4.1.1
+whitenoise==6.9.0
