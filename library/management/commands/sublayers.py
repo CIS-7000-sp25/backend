@@ -7,7 +7,7 @@ import os
 
 DT_FMT="%m-%d-%Y %H:%M:%S%:z"
 
-ASSETS_2024 = ["carrot", "mug", "paniniPress", "sushi", "wineGlass", "kitchenaid", "oldTelevision", "penTablet", "teapot", "woodenChair"]
+ASSETS_2024 = ["carrot", "mug", "paniniPress", "sushi", "wineGlass", "kitchenaid", "oldTelevision", "penTablet", "flatTeapot", "woodenChair"]
 STATUS_TAGS = ["acquired", "approved", "standardized"]
 
 class Command(BaseCommand):
