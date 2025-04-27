@@ -34,6 +34,7 @@ def verify_asset(extracted_file, file_name, tmp_dir):
         references.check_usd_references(stage, Path(file_name), tmp_dir)
         if Path(file_name).stem == Path(file_name).parents[0].name:
             structure.check_usd_structure(stage, file_name, tmp_dir)
+
         return (True, "No error")
     except AssertionError as ae:
         print(f"Assertion error: {str(ae)}")
@@ -80,12 +81,18 @@ def validate_zip(request):
             if file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda'):
                 with open(temp_dir / file_info.filename, 'rb') as extracted_file:
                     fileResult = verify_asset(extracted_file, file_info.filename, temp_dir)
-                    result[0] = result[0] and fileResult[0]
+
+                    newStatus: bool = result[0] and fileResult[0]
+                    newMessage: str = result[1]
                     if not fileResult[0]:
-                        result[1] += f"{file_info.filename} errors: {fileResult[1]}"
+                        newMessage: str = f"{newMessage}\n\n" + f"{fileResult[1]}\n\n"
+
+                    result = (newStatus, newMessage)
 
         if not result[0]:
             print("Upload failed")
+
+        print(result[1])
         
         return result
 
@@ -99,7 +106,7 @@ def get_verify(request, asset_name):
         if result:
             return Response({'success': True, 'message': "Passed validation!"}, status=200) 
         else:
-            return Response({'success': False, 'message': error_msg}, status=400) 
+            return Response({'success': False, 'message': error_msg}, status=200) 
     except Exception as e:
         return Response({'success': False, 'message': str(e)}, status=500)
 
