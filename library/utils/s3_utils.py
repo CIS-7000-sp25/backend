@@ -12,18 +12,22 @@ class S3Manager:
         self.bucket = settings.AWS_BUCKET_NAME
         self.resource = boto3.resource('s3')
 
-    def generate_presigned_url(self, key, expires_in=60):
+    def generate_presigned_url(self, key, expires_in=60, bucket="cis-7000-usd-assets"):
         return self.client.generate_presigned_url(
             'get_object',
-            Params={'Bucket': self.bucket, 'Key': key}, # relative path to bucket
+            Params={'Bucket': bucket, 'Key': key}, # relative path to bucket
             ExpiresIn=expires_in
         )
     
     def update_file(self, file, key):
+        """Better for small objects. Returns response which contains versionID as response.get('VersionId)"""
         return self.client.put_object(Body=file, Bucket=self.bucket, Key=key)
 
-    def upload_fileobj(self, file, key):
+    def upload_fileobj(self, file, key) -> str:
+        """Better for large objects. Returns response using `head_object` which contains versionID as response.get('VersionId)"""
         self.client.upload_fileobj(file, self.bucket, key)
+        response = self.client.head_object(Bucket=self.bucket, Key=key)
+        return response
     
     def delete_file(self, key):
         self.client.delete_object(Bucket=self.bucket, Key=key)

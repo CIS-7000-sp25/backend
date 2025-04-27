@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "library",
     'silk',
+    "drf_yasg"
 ]
 
 MIDDLEWARE = [

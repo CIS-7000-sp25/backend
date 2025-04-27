@@ -1,13 +1,16 @@
-from datetime import datetime
 from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from .utils.s3_utils import S3Manager
+from rest_framework.response import Response, Serializer
+from django.shortcuts import get_object_or_404
+from django.db import transaction
+from drf_yasg.utils import swagger_auto_schema
+
 from pxr import Usd
 import zipfile
 import tempfile
 from pathlib import Path
 
 from library.models import Asset
+from library.serializers import CommitSerializer, AssetSerializer
 
 from library.usd_validation import (
     core, geometry, materials, references, structure
@@ -37,15 +40,12 @@ def verify_asset(extracted_file, file_name, tmp_dir):
         print(f"General Exception: {e}")
         return (False, f"Unexpected error: {e}")
 
-def extract_zip(request, asset_name, is_upload):
+def validate_zip(request):
     # TO DO: Find a way to cache this result so upload will grab results from verify
     zip = request.FILES.get('file')
-    version = request.POST.get('version')
 
     if not zip or not zip.name.endswith('zip'):
-        return Response({'error': 'Not a zip, or missing files'}, status=404)
-    
-    s3 = S3Manager() if is_upload else None
+        return (False, "Not a zip, or missing files")
 
     # Extract to a temporary directory
     with zipfile.ZipFile(zip) as zip_ref:
@@ -69,81 +69,88 @@ def extract_zip(request, asset_name, is_upload):
                 with open(extracted_file_path, 'wb') as out_file:
                     out_file.write(extracted_file.read())
 
+        result = (True, "") # S3 + MySQL changes need to be either or. Can't partially upload some files then fail
         # Run USD verification on extracted files
         for file_info in zip_ref.infolist():
-            if file_info.is_dir() or not (file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda')):
+            if file_info.is_dir():
                 continue
-            
-            # Only process USD files
-            with open(temp_dir / file_info.filename, 'rb') as extracted_file:
-                result = verify_asset(extracted_file, file_info.filename, temp_dir)
 
-                if not result[0]:
-                    print("you failed")
-                    return (False, result[1])
-                
-                if is_upload:
-                    s3.upload_fileobj(
-                        extracted_file, 
-                        f"{asset_name}/{version}/{file_info.filename}"
-                    )
-    
-    return (True, "good job")
+            if file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda'):
+                with open(temp_dir / file_info.filename, 'rb') as extracted_file:
+                    fileResult = verify_asset(extracted_file, file_info.filename, temp_dir)
+                    result[0] = result[0] and fileResult[0]
+                    if not fileResult[0]:
+                        result[1] += f"{file_info.filename} errors: {fileResult[1]}"
 
+        if not result[0]:
+            print("Upload failed")
+        
+        return result
 
+@swagger_auto_schema(method='post', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 500: Serializer}) # include responses for Swagger docs
 @api_view(['POST'])
 def get_verify(request, asset_name):
-    try:
-        print("you hit it")
-        result, error_msg = extract_zip(request, asset_name, is_upload=False)
-        return Response(data={
-            'result' : result,
-            'error_msg' : error_msg
-            }, status=200) 
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)
+    asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
+    serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
 
+    if serializer.is_valid():
+        try:
+            print("you hit it")
+            result, error_msg = validate_zip(request)
+            if result:
+                return Response({'success': True, 'message': "Passed validation!"}, status=200) 
+            else:
+                return Response({'success': False, 'message': error_msg}, status=400) 
+        except Exception as e:
+            return Response({'success': False, 'message': str(e)}, status=500)
+    else:
+        return Response(serializer.errors, status=400)
+
+
+@swagger_auto_schema(method='post', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 500: Serializer})
 @api_view(['POST'])
 def post_asset(request, asset_name):
     try:
-        # On the frontend, we should first check if metadata exists
-        # Metadata upload is a separate POST
+        with transaction.atomic():  # whole asset + commit flow in one transaction
+            asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name})
+            if not asset_serializer.is_valid():
+                return Response({'success': False, 'message': asset_serializer.errors}, status=400)
 
-        if extract_zip(request, asset_name, is_upload=True):
-            return Response({'message': 'Successfully uploaded'}, status=200)
-    
+            asset = asset_serializer.save()
+
+            commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
+            if not commit_serializer.is_valid():
+                return Response({'success': False, 'message': commit_serializer.errors}, status=400)
+
+            result, error_msg = validate_zip(request)
+            if not result:
+                raise Exception(f"Error validating USD files: {error_msg}")  # Raise to trigger rollback
+
+            commit = commit_serializer.save()
+
+            return Response({'success': True, 'message': "Successfully uploaded.", 'id': commit.id}, status=200)
+
     except Exception as e:
-        return Response({'error': str(e)}, status=500)
+        return Response({'success': False, 'message': str(e)}, status=500)
     
-
+@swagger_auto_schema(method='put', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 404: Serializer, 500: Serializer})
 @api_view(['PUT'])
-def put_asset(request, asset_name, new_version):
-    try:
-        if not Asset.objects.get(assetName=asset_name):
-            return Response({'error': 'Asset does not exist'}, status=400)
-            
-        files = request.FILES.getlist('files')
-        if not files:
-            return Response({'error': 'Request missing files'}, status=404)
+def put_asset(request, asset_name):
+    asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
+    serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
 
-        s3 = S3Manager()
-        version_map = {}
-
-        with zipfile.ZipFile(zip) as zip_ref:
-            for file_info in zip_ref.infolist():
-                if file_info.is_dir():
-                    continue
-
-                with zip_ref.open(file_info.filename) as extracted_file:
-                    key = f"{asset_name}/{new_version}/{file_info.filename}"
-                    response = s3.update_file(
-                        extracted_file, 
-                        key
-                    )
-
-                    version_map.update({key, response["VersionId"]})
-
-        return Response({'message': 'Successfully updated', 'version_map': version_map}, status=200)
-
-    except Exception as e:
-        return Response({'error' : str(e)}, status=500)
+    if serializer.is_valid():
+        try:
+            # On the frontend, we should first check if metadata exists
+            # Metadata upload is a separate POST
+            result, error_msg = validate_zip(request)
+            if result:
+                commit = serializer.save()
+                return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
+            else:
+                return Response({'success': False, 'message': f"Error occured in validating USD files: {error_msg}"}, status=400)
+        
+        except Exception as e:
+            return Response({'success': False, 'message': str(e)}, status=500)
+    else:
+        return Response({'success': False, 'message': serializer.errors}, status=400)
