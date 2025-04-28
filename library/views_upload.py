@@ -20,7 +20,7 @@ from library.usd_validation import (
     core, geometry, materials, references, structure
 )
 
-def verify_asset(extracted_file, file_name, tmp_dir):
+def verify_asset(extracted_file, file_name, tmp_dir, asset_name):
     try:
         # Write the in-memory file to a temporary file
         with tempfile.NamedTemporaryFile(suffix=".usd", delete=False) as tmp:
@@ -35,7 +35,7 @@ def verify_asset(extracted_file, file_name, tmp_dir):
         materials.check_usd_materials(stage, file_name)
         references.check_usd_references(stage, Path(file_name), tmp_dir)
         if Path(file_name).stem == Path(file_name).parents[0].name:
-            structure.check_usd_structure(stage, file_name, tmp_dir)
+            structure.check_usd_structure(stage, file_name, tmp_dir, asset_name)
 
         return (True, "No error")
     except AssertionError as ae:
@@ -86,7 +86,7 @@ def validate_zip(request, asset_name):
 
             if file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda'):
                 with open(temp_dir / file_info.filename, 'rb') as extracted_file:
-                    fileResult = verify_asset(extracted_file, file_info.filename, temp_dir)
+                    fileResult = verify_asset(extracted_file, file_info.filename, temp_dir, asset_name)
 
                     newStatus: bool = result[0] and fileResult[0]
                     newMessage: str = result[1]

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-def check_usd_structure(stage, file_name: str, temp_dir: Path):
+def check_usd_structure(stage, file_name: str, temp_dir: Path, name: str):
     """Checks that the extracted asset has the expected folder and file structure."""
 
     asset_name = Path(file_name).parts[0]
@@ -8,6 +8,9 @@ def check_usd_structure(stage, file_name: str, temp_dir: Path):
 
     if not base_path.exists():
         raise AssertionError(f"{base_path} does not exist.")
+    
+    if (asset_name != name):
+        raise AssertionError(f"USD file name {asset_name} does not match expected asset name {name}.")
 
     expected_structure = generate_expected_structure(asset_name)
     check_directory_structure(base_path, expected_structure)
