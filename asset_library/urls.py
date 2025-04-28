@@ -24,10 +24,7 @@ from drf_yasg import openapi
 from django.urls import re_path
 import os
 
-if settings.DEBUG == True:
-    swagger_url = 'http://localhost:8000'
-else:
-    swagger_url = os.getenv('DYNAMIC_BASE_URL', 'https://usd-asset-library.up.railway.app/')
+swagger_url = settings.DYNAMIC_BASE_URL
 
 schema_view = get_schema_view(
    openapi.Info(

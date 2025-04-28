@@ -34,6 +34,8 @@ AWS_BUCKET_NAME = config("AWS_BUCKET_NAME")
 # " SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+DYNAMIC_BASE_URL=config("DYNAMIC_BASE_URL")
+
 ALLOWED_HOSTS = ["*"]
 CORS_ALLOW_ALL_ORIGINS = True
 
