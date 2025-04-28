@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-from . import views, views_api, views_auth, views_upload, views_download
+from . import views, views_api, views_auth, views_upload, views_download, views_info
 
 urlpatterns = [
     path('', views.home, name='home'),
@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/assets/<str:asset_name>/download/glb/', views_api.download_glb, name='api_asset_download_glb'),
     path('api/assets/<str:asset_name>/download/commit/<str:commit>/', views_download.download_asset_by_commit, name='api_asset_download_commit'),
     path('api/assets/<str:asset_name>/download/tag/<str:tag>/', views_download.download_asset_by_tag, name='api_asset_download_tag'),
+    path('api/assets/<str:asset_name>/info/commits/', views_info.get_asset_commits, name='api_asset_info_commits'),
     
     path('api/commits/', views_api.get_commits, name='get_commits'),
     path('api/commits/<str:commit_id>/', views_api.get_commit, name='get_commit'),
