@@ -12,7 +12,7 @@ class S3Manager:
         self.bucket = settings.AWS_BUCKET_NAME
         self.resource = boto3.resource('s3')
 
-    def generate_presigned_url(self, key, expires_in=60, bucket="cis-7000-usd-assets"):
+    def generate_presigned_url(self, key, bucket="cis-7000-usd-assets", expires_in=60):
         return self.client.generate_presigned_url(
             'get_object',
             Params={'Bucket': bucket, 'Key': key}, # relative path to bucket
@@ -59,3 +59,14 @@ class S3Manager:
     def delete_object(self, key, bucket="cis-7000-usd-assets"):
         """PLEASE be confident before you use!"""
         self.client.delete_object(Bucket=bucket, Key=key)
+
+    def thumbnail_key_to_url(self, thumbnailKey, expires_in=60):
+        _splitThumbnailKey = thumbnailKey.split("/", 1)
+        _bucket = _splitThumbnailKey[0]
+        _key = _splitThumbnailKey[1]
+        
+        return self.client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': _bucket, 'Key': _key}, # relative path to bucket
+            ExpiresIn=expires_in
+        )

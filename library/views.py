@@ -24,7 +24,8 @@ def home(request):
     s3 = S3Manager()
     assets_with_urls = []
     for asset in assets:
-        thumbnail_url = s3.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+        thumbnail_url = s3.thumbnail_key_to_url(asset.thumbnailKey) if asset.thumbnailKey else None
+
         assets_with_urls.append({
             "asset": asset,
             "thumbnail_url": thumbnail_url
@@ -40,8 +41,10 @@ def asset_detail(request, asset_name):
     template = loader.get_template('asset_detail.html')
     commits = Commit.objects.filter(asset=asset).order_by('-timestamp')
     versions = Sublayer.objects.filter(asset=asset).order_by('-sublayerName')
+    
     s3 = S3Manager()
-    thumbnail = s3.generate_presigned_url(asset.thumbnailKey) if asset.thumbnailKey else None
+    thumbnail = s3.thumbnail_key_to_url(asset.thumbnailKey) if asset.thumbnailKey else None
+    
     glbKey = f"{asset_name}/{asset_name}.glb"
     glbUrl = s3.generate_presigned_url(glbKey)
 

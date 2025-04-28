@@ -100,7 +100,7 @@ class CommitSerializer(serializers.ModelSerializer):
                 s3_versionID = ""
 
                 with zip_ref.open(file_info.filename) as extracted_file:
-                    _splitFilepath = filepath.split("/")
+                    _splitFilepath = filepath.split("/", 1)
                     _bucket = _splitFilepath[0]
                     _key = _splitFilepath[1]
 
