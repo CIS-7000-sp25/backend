@@ -10,6 +10,7 @@ import zipfile
 import tempfile
 from pathlib import Path
 import os
+import json
 
 from library.models import Asset, Author, Keyword
 from library.serializers import (
@@ -126,14 +127,15 @@ def post_asset(request, asset_name):
         with transaction.atomic():  # whole asset + commit flow in one transaction
             asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name, "isUpload": True})
             if not asset_serializer.is_valid():
-                return Response({'success': False, 'message': "Input data invalid: " + asset_serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + json.dumps(asset_serializer.errors)}, status=400)
 
             asset = asset_serializer.save()
 
             author = get_object_or_404(Author, username=request.data.get("pennkey"))
             commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author})
+
             if not commit_serializer.is_valid():
-                return Response({'success': False, 'message': "Input data invalid: " + commit_serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + json.dumps(commit_serializer.errors)}, status=400)
 
             commit = commit_serializer.save()
             return Response({'success': True, 'message': "Successfully uploaded.", 'id': commit.id}, status=200)
@@ -148,22 +150,25 @@ def put_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
             asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
+            
+            asset_serializer = AssetSerializer(asset, data=request.data, partial=True, context={"assetName": asset.assetName})
+            if asset_serializer.is_valid():
+                asset_serializer.save()
+            else:
+                return Response({
+                    'success': False,
+                    'message': "Input data invalid: " + json.dumps(asset_serializer.errors)
+                }, status=400)
+            
             author = get_object_or_404(Author, username=request.data.get("pennkey"))
 
-            serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
-
-            if serializer.is_valid():
-                commit = serializer.save()
-
-                for keyword in request.data.get("keywordsRawList"):
-                    keyword_obj, created = Keyword.objects.get_or_create(keyword=keyword)
-                    asset.keywordsList.add(keyword_obj)
-                    print(f"Keyword: {keyword}, was created: {created}")
-
-                asset.hasTexture = request.data.get("hasTexture")
+            commitSerializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
+            
+            if commitSerializer.is_valid():
+                commit = commitSerializer.save()
 
                 return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
             else:
-                return Response({'success': False, 'message': "Input data invalid: " + serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + json.dumps(commitSerializer.errors)}, status=400)
     except Exception as e:
         return Response({'success': False, 'message': "Error occurred on the backend server: " + str(e)}, status=500)
