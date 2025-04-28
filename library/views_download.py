@@ -15,16 +15,17 @@ import os
     method='get',
     responses={200: openapi.Response(description="Zip file", content_type="application/zip")})
 @api_view(['GET'])
-def download_asset_by_version(request, asset_name, version):
+def download_asset_by_commit(request, asset_name, commit): # `commit`` is version number of commit
     s3 = S3Manager()
 
     asset = get_object_or_404(Asset, assetName=asset_name)
-    commit = get_object_or_404(Commit, asset=asset, version=version)
+    commitObj = get_object_or_404(Commit, asset=asset, version=commit)
 
-    ZIP_PREFIX=f"{asset_name}_{version}"
+    ZIP_PREFIX=f"{asset_name}_{commit}"
+    print(ZIP_PREFIX)
 
     zip_data = {}
-    for sublayer in commit.sublayers.all():
+    for sublayer in commitObj.sublayers.all():
         sublayer: Sublayer
         
         # continue with new found sublayer of desired tag
@@ -37,7 +38,7 @@ def download_asset_by_version(request, asset_name, version):
     zip_buffer = zip_files_from_memory(zip_data)
 
     response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
-    response['Content-Disposition'] = f'attachment; filename=f"{ZIP_PREFIX}.zip"'
+    response['Content-Disposition'] = f'attachment; filename="{ZIP_PREFIX}.zip"'
     return response
 
 @swagger_auto_schema(
@@ -86,7 +87,7 @@ def download_asset_by_tag(request, asset_name, tag: str):
     zip_buffer = zip_files_from_memory(zip_data)
 
     response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
-    response['Content-Disposition'] = f'attachment; filename=f"{ZIP_PREFIX}.zip"'
+    response['Content-Disposition'] = f'attachment; filename="{ZIP_PREFIX}.zip"'
     return response
 
 def _get_bytes_for_sublayer(s3: S3Manager, sublayer: Sublayer) -> tuple[str, bytes]: # returns: truncated s3 key, bytes of file

@@ -71,3 +71,12 @@ class Commit(models.Model):
 
     def __str__(self):
         return f"{self.version} - {self.asset.assetName}"
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "authorPennkey": self.author.pennkey,
+            "version": self.version,
+            "timestamp": self.timestamp,
+            "note": self.note
+        }

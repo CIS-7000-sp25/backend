@@ -1,4 +1,5 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
@@ -10,7 +11,7 @@ import tempfile
 from pathlib import Path
 import os
 
-from library.models import Asset, Author
+from library.models import Asset, Author, Keyword
 from library.serializers import (
     CommitSerializer, AssetSerializer, UploadSerializer, CheckinSerializer, VerifySerializer, SuccessResponseSerializer, ErrorResponseSerializer
 )
@@ -55,9 +56,6 @@ def validate_zip(request, asset_name):
     with zipfile.ZipFile(zip) as zip_ref:
         temp_dir = Path(tempfile.mkdtemp())
 
-        if not os.path.isfile(os.path.join(temp_dir, f"{asset_name}/contrib/.thumbs/thumbnail.png")):
-            return (False, "Error: No `thumbnail.png` file exists at `<ASSET_NAME>/contrib/.thumbs/thumbnail.png`")
-
         # Extract all files to temp_dir while preserving folder structure
         for file_info in zip_ref.infolist():
             # Create the full path for the file
@@ -75,6 +73,12 @@ def validate_zip(request, asset_name):
             with zip_ref.open(file_info) as extracted_file:
                 with open(extracted_file_path, 'wb') as out_file:
                     out_file.write(extracted_file.read())
+        
+        if not os.path.exists(os.path.join(temp_dir, f"{asset_name}")):
+            return (False, "Error: Please make sure the zipped directory is named correctly (<ASSET_NAME>)")
+
+        if not os.path.isfile(os.path.join(temp_dir, f"{asset_name}/contrib/.thumbs/thumbnail.png")):
+            return (False, "Error: No `thumbnail.png` file exists at `<ASSET_NAME>/contrib/.thumbs/thumbnail.png`")
 
         result = (True, "") # S3 + MySQL changes need to be either or. Can't partially upload some files then fail
         # Run USD verification on extracted files
@@ -102,6 +106,7 @@ def validate_zip(request, asset_name):
 
 @swagger_auto_schema(method='post', request_body=VerifySerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['POST'])
+@parser_classes([MultiPartParser])
 def get_verify(request, asset_name):
     try:
         print("you hit it")
@@ -115,6 +120,7 @@ def get_verify(request, asset_name):
 
 @swagger_auto_schema(method='post', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['POST'])
+@parser_classes([MultiPartParser])
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
@@ -137,6 +143,7 @@ def post_asset(request, asset_name):
     
 @swagger_auto_schema(method='put', request_body=CheckinSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['PUT'])
+@parser_classes([MultiPartParser])
 def put_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
@@ -146,9 +153,16 @@ def put_asset(request, asset_name):
             serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
 
             if serializer.is_valid():
-                    commit = serializer.save()
+                commit = serializer.save()
 
-                    return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
+                for keyword in request.data.get("keywordsRawList"):
+                    keyword_obj, created = Keyword.objects.get_or_create(keyword=keyword)
+                    asset.keywordsList.add(keyword_obj)
+                    print(f"Keyword: {keyword}, was created: {created}")
+
+                asset.hasTexture = request.data.get("hasTexture")
+
+                return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
             else:
                 return Response({'success': False, 'message': "Input data invalid: " + serializer.errors}, status=400)
     except Exception as e:

@@ -5,6 +5,12 @@ from typing import List
 import zipfile
 import re
 
+class CommitDictSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    version = serializers.CharField()
+    timestamp = serializers.DateTimeField()
+    authorPennkey = serializers.CharField()
+    note = serializers.CharField()
 
 class VerifySerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
@@ -15,6 +21,9 @@ class CheckinSerializer(serializers.Serializer):
     version = serializers.CharField(required=True)
     hasTexture = serializers.BooleanField(required=True)
     pennkey = serializers.CharField(required=True)
+    keywordsRawList = serializers.ListField(
+        child=serializers.CharField(), required=False
+    )
 
 class UploadSerializer(serializers.Serializer):
     file = serializers.FileField(required=True)

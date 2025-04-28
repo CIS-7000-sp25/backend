@@ -64,6 +64,9 @@ class S3Manager:
         _splitThumbnailKey = thumbnailKey.split("/", 1)
         _bucket = _splitThumbnailKey[0]
         _key = _splitThumbnailKey[1]
+
+        print(_bucket)
+        print(_key)
         
         return self.client.generate_presigned_url(
             'get_object',
