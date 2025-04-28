@@ -12,7 +12,7 @@ import os
 
 from library.models import Asset, Author
 from library.serializers import (
-    CommitSerializer, AssetSerializer, UploadSerializer, VerifySerializer, SuccessResponseSerializer, ErrorResponseSerializer
+    CommitSerializer, AssetSerializer, UploadSerializer, CheckinSerializer, VerifySerializer, SuccessResponseSerializer, ErrorResponseSerializer
 )
 
 from library.usd_validation import (
@@ -118,7 +118,7 @@ def get_verify(request, asset_name):
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
-            asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name})
+            asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name, "isUpload": True})
             if not asset_serializer.is_valid():
                 return Response({'success': False, 'message': "Input data invalid: " + asset_serializer.errors}, status=400)
 
@@ -135,7 +135,7 @@ def post_asset(request, asset_name):
     except Exception as e:
         return Response({'success': False, 'message': "Error occurred on the backend server: " + str(e)}, status=500)
     
-@swagger_auto_schema(method='put', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
+@swagger_auto_schema(method='put', request_body=CheckinSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['PUT'])
 def put_asset(request, asset_name):
     try:
@@ -143,7 +143,7 @@ def put_asset(request, asset_name):
             asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
             author = get_object_or_404(Author, username=request.data.get("pennkey"))
 
-            serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author})
+            serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
 
             if serializer.is_valid():
                     commit = serializer.save()

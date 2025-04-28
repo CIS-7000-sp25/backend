@@ -9,10 +9,16 @@ import re
 class VerifySerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
 
-class UploadSerializer(serializers.Serializer):
+class CheckinSerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
     note = serializers.CharField(required=True)
     version = serializers.CharField(required=True)
+    hasTexture = serializers.BooleanField(required=True)
+    pennkey = serializers.CharField(required=True)
+
+class UploadSerializer(serializers.Serializer):
+    file = serializers.FileField(required=True)
+    note = serializers.CharField(required=True)
     hasTexture = serializers.BooleanField(required=True)
     pennkey = serializers.CharField(required=True)
     keywordsRawList = serializers.ListField(
@@ -22,12 +28,10 @@ class UploadSerializer(serializers.Serializer):
 class SuccessResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=True)
     message = serializers.CharField()
-    id = serializers.UUIDField(required=False)
 
 class ErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
     message = serializers.CharField()
-    id = serializers.UUIDField(required=False)
 
 class AssetSerializer(serializers.ModelSerializer):
     keywordsRawList = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)
@@ -73,7 +77,7 @@ class CommitSerializer(serializers.ModelSerializer):
                 
     def create(self, validated_data):
         asset = self.context.get("asset")
-        version = validated_data.get("version")
+        version = "01.00.00" if self.context.get("isUpload") else validated_data.get("version")
         author = self.context.get("author")
         note = validated_data.get("note")
 
