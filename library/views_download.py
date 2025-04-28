@@ -15,13 +15,13 @@ import os
     method='get',
     responses={200: openapi.Response(description="Zip file", content_type="application/zip")})
 @api_view(['GET'])
-def download_asset_by_version(request, asset_name, version):
+def download_asset_by_commit(request, asset_name, commit): # `commit`` is version number of commit
     s3 = S3Manager()
 
     asset = get_object_or_404(Asset, assetName=asset_name)
-    commit = get_object_or_404(Commit, asset=asset, version=version)
+    commit = get_object_or_404(Commit, asset=asset, version=commit)
 
-    ZIP_PREFIX=f"{asset_name}_{version}"
+    ZIP_PREFIX=f"{asset_name}_{commit}"
 
     zip_data = {}
     for sublayer in commit.sublayers.all():

@@ -24,7 +24,7 @@ urlpatterns = [
     path('api/assets/<str:asset_name>/checkout/', views_api.checkout_asset, name='api_asset_checkout'),
     path('api/assets/<str:asset_name>/download/', views_api.download_asset, name='api_asset_download'),
     path('api/assets/<str:asset_name>/download/glb/', views_api.download_glb, name='api_asset_download_glb'),
-    path('api/assets/<str:asset_name>/download/version/<str:version>/', views_download.download_asset_by_version, name='api_asset_download_version'),
+    path('api/assets/<str:asset_name>/download/commit/<str:commit>/', views_download.download_asset_by_commit, name='api_asset_download_commit'),
     path('api/assets/<str:asset_name>/download/tag/<str:tag>/', views_download.download_asset_by_tag, name='api_asset_download_tag'),
     
     path('api/commits/', views_api.get_commits, name='get_commits'),
