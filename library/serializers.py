@@ -14,9 +14,20 @@ class UploadSerializer(serializers.Serializer):
     note = serializers.CharField(required=True)
     version = serializers.CharField(required=True)
     hasTexture = serializers.BooleanField(required=True)
+    pennkey = serializers.CharField(required=True)
     keywordsRawList = serializers.ListField(
         child=serializers.CharField(), required=False
     )
+
+class SuccessResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField(default=True)
+    message = serializers.CharField()
+    id = serializers.UUIDField(required=False)
+
+class ErrorResponseSerializer(serializers.Serializer):
+    success = serializers.BooleanField(default=False)
+    message = serializers.CharField()
+    id = serializers.UUIDField(required=False)
 
 class AssetSerializer(serializers.ModelSerializer):
     keywordsRawList = serializers.ListField(child=serializers.CharField(), write_only=True, required=False)

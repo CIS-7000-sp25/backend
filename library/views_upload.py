@@ -1,18 +1,18 @@
 from rest_framework.decorators import api_view
-from rest_framework.decorators import parser_classes
-from rest_framework.response import Response, Serializer
+from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework.parsers import MultiPartParser
 
 from pxr import Usd
 import zipfile
 import tempfile
 from pathlib import Path
 
-from library.models import Asset
-from library.serializers import CommitSerializer, AssetSerializer, UploadSerializer, VerifySerializer
+from library.models import Asset, Author
+from library.serializers import (
+    CommitSerializer, AssetSerializer, UploadSerializer, VerifySerializer, SuccessResponseSerializer, ErrorResponseSerializer
+)
 
 from library.usd_validation import (
     core, geometry, materials, references, structure
@@ -96,9 +96,8 @@ def validate_zip(request):
         
         return result
 
-@swagger_auto_schema(method='post', request_body=VerifySerializer, consumes=["multipart/form-data"], responses={200: Serializer, 400: Serializer, 500: Serializer}) # include responses for Swagger docs
+@swagger_auto_schema(method='post', request_body=VerifySerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['POST'])
-@parser_classes([MultiPartParser])
 def get_verify(request, asset_name):
     try:
         print("you hit it")
@@ -108,50 +107,45 @@ def get_verify(request, asset_name):
         else:
             return Response({'success': False, 'message': error_msg}, status=200) 
     except Exception as e:
-        return Response({'success': False, 'message': str(e)}, status=500)
+        return Response({'success': False, 'message': "Error occurred on the backend server: " + str(e)}, status=500)
 
-
-@swagger_auto_schema(method='post', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: Serializer, 400: Serializer, 500: Serializer})
+@swagger_auto_schema(method='post', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['POST'])
-@parser_classes([MultiPartParser])
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
             asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name})
             if not asset_serializer.is_valid():
-                return Response({'success': False, 'message': asset_serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + asset_serializer.errors}, status=400)
 
             asset = asset_serializer.save()
 
-            commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
+            author = get_object_or_404(Author, username=request.data.get("pennkey"))
+            commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author})
             if not commit_serializer.is_valid():
-                return Response({'success': False, 'message': commit_serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + commit_serializer.errors}, status=400)
 
             commit = commit_serializer.save()
-
             return Response({'success': True, 'message': "Successfully uploaded.", 'id': commit.id}, status=200)
 
     except Exception as e:
-        return Response({'success': False, 'message': str(e)}, status=500)
+        return Response({'success': False, 'message': "Error occurred on the backend server: " + str(e)}, status=500)
     
-@swagger_auto_schema(method='put', request_body=CommitSerializer, responses={200: Serializer, 400: Serializer, 404: Serializer, 500: Serializer})
+@swagger_auto_schema(method='put', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['PUT'])
 def put_asset(request, asset_name):
-    asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
-    serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": request.user})
+    try:
+        with transaction.atomic():  # whole asset + commit flow in one transaction
+            asset = get_object_or_404(Asset, assetName=asset_name) # automatically return a 404 Response if the asset is missing.
+            author = get_object_or_404(Author, username=request.data.get("pennkey"))
 
-    if serializer.is_valid():
-        try:
-            # On the frontend, we should first check if metadata exists
-            # Metadata upload is a separate POST
-            result, error_msg = validate_zip(request)
-            if result:
-                commit = serializer.save()
-                return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
+            serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author})
+
+            if serializer.is_valid():
+                    commit = serializer.save()
+
+                    return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
             else:
-                return Response({'success': False, 'message': f"Error occured in validating USD files: {error_msg}"}, status=400)
-        
-        except Exception as e:
-            return Response({'success': False, 'message': str(e)}, status=500)
-    else:
-        return Response({'success': False, 'message': serializer.errors}, status=400)
+                return Response({'success': False, 'message': "Input data invalid: " + serializer.errors}, status=400)
+    except Exception as e:
+        return Response({'success': False, 'message': "Error occurred on the backend server: " + str(e)}, status=500)

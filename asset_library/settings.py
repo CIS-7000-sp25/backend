@@ -132,6 +132,11 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.FormParser'
+    ]
 }
 
 SIMPLE_JWT = {
@@ -161,9 +166,7 @@ STATIC_URL = "static/"
 # Tells third-party apps a single folder where static files have been compiled to.
 STATIC_ROOT = os.path.join(BASE_DIR, 'var', 'static')
 # Additional directories that can be catered per app for django to search for files
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static')
-]
+STATICFILES_DIRS = []
 STATICFILES_STORAGE="whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # Default primary key field type
