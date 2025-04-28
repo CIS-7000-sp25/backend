@@ -8,34 +8,38 @@ def check_usd_structure(stage, file_name: str, temp_dir: Path):
     base_path = temp_dir / asset_name
 
     if not base_path.exists():
-        raise AssertionError(f"❌ {base_path} does not exist.")
+        raise AssertionError(f"{base_path} does not exist.")
 
     expected_structure = generate_expected_structure(asset_name)
     check_directory_structure(base_path, expected_structure)
 
-def check_directory_structure(base_path: Path, expected_structure: dict, valid_extensions=('.usd', '.usda')):
+def check_directory_structure(base_path: Path, expected_structure: dict, valid_extensions=('.usd', '.usda', '.usdc', '.png', '.glb')):
     """Recursively check directory structure against expected structure."""
     for name, content in expected_structure.items():
         current_path = base_path / name
 
-        if isinstance(content, dict):  # Subdirectory
+        if isinstance(content, dict):
             relative_path = current_path.relative_to(base_path)
-            assert current_path.exists(), f"❌ Missing folder: {relative_path}"
+            assert current_path.is_dir(), f"Missing folder: {relative_path}"
             check_directory_structure(current_path, content, valid_extensions)
-        else:  # List of acceptable file names (without extensions)
-            for base_file_name in content:
-                expected_paths = [current_path / f"{base_file_name}{ext}" for ext in valid_extensions]
-                found = any(p.exists() for p in expected_paths)
-
-                example_path = expected_paths[0].relative_to(base_path)
-                location = example_path.parent if example_path.parent != Path('.') else "root directory"
-                assert found, f"❌ Missing file: {example_path.stem} with one of {valid_extensions} in {location}"
+        elif isinstance(content, list):
+            found = False
+            for ext in valid_extensions:
+                possible_file = current_path.with_suffix(ext)
+                if possible_file.exists():
+                    found = True
+                    break
+            if not found:
+                relative_file = current_path.relative_to(base_path)
+                raise AssertionError(f"Missing file: {relative_file}")
+        else:
+            raise ValueError(f"Unexpected content type at {current_path}: {type(content)}")
 
 
 def generate_expected_structure(asset_name: str) -> dict:
     """Generate expected directory structure based on asset name (folder name)."""
     return {
-        "": [asset_name],
+        f"{asset_name}": [],
         "contrib": {
             "geometry": {
                 "geometry.usda": [],
@@ -60,6 +64,13 @@ def generate_expected_structure(asset_name: str) -> dict:
                         "default.png": []
                     },
                 },
+            },
+            ".thumbs":{
+                "thumbnail.png": [],
+            },
+            ".cache": {
+                f"{asset_name}.glb": [],
             }
         }
     }
+
