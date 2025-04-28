@@ -81,9 +81,3 @@ def download_asset_by_name(request, assetName):
     response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
     response['Content-Disposition'] = f'attachment; filename="{assetName}.zip"'
     return response
-
-def download_asset_by_version(request, assetName, version: str):
-    pass
-
-def download_asset_by_tag(request, assetName, tag: str):
-    pass
