@@ -37,8 +37,10 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 CORS_ALLOW_ALL_ORIGINS = True
 
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 CORS_ALLOWED_ORIGINS = [
-    "https://usd-asset-library.up.railway.app",
+    "https://usd-asset-library.up.railway.app/",
     "https://backend-production-9a54.up.railway.app/",
     "http://localhost:8000"
 ]
