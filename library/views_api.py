@@ -231,6 +231,15 @@ def get_asset(request, asset_name):
             f"and used {queries_used} DB queries."
         )
 
+@api_view(['GET'])
+def check_asset_exists(request, asset_name):
+    """Check if an asset with the given name exists."""
+    try:
+        exists = Asset.objects.filter(assetName=asset_name).exists()
+        return Response({'exists': exists})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
 
 @api_view(['PUT'])
 def put_metadata(request, asset_name, new_version):
@@ -622,3 +631,4 @@ def get_user(request, pennkey):
             f"[PERF DEBUG] get_user took {elapsed_seconds:.4f} seconds "
             f"and used {queries_used} DB queries."
         )
+    
