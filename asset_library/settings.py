@@ -37,6 +37,11 @@ DEBUG = True
 ALLOWED_HOSTS = ["*"]
 CORS_ALLOW_ALL_ORIGINS = True
 
+CORS_ALLOWED_ORIGINS = [
+    "https://usd-asset-library.up.railway.app",
+    "http://localhost:8000"
+]
+
 SILKY_INTERCEPT_PERCENT = 50
 SILKY_MAX_RECORDED_REQUESTS = 1000
 
