@@ -12,7 +12,7 @@ class S3Manager:
         self.bucket = settings.AWS_BUCKET_NAME
         self.resource = boto3.resource('s3')
 
-    def generate_presigned_url(self, key, bucket="cis-7000-usd-assets", expires_in=60):
+    def generate_presigned_url(self, key, bucket="cis-7000-usd-assets-versioned", expires_in=60):
         return self.client.generate_presigned_url(
             'get_object',
             Params={'Bucket': bucket, 'Key': key}, # relative path to bucket
@@ -32,7 +32,7 @@ class S3Manager:
     def delete_file(self, key):
         self.client.delete_object(Bucket=self.bucket, Key=key)
 
-    def list_s3_files(self, prefix, bucket="cis-7000-usd-assets"):
+    def list_s3_files(self, prefix, bucket="cis-7000-usd-assets-versioned"):
         paginator = self.client.get_paginator('list_objects_v2')
         result = []
 
@@ -42,11 +42,11 @@ class S3Manager:
 
         return result
 
-    def download_s3_file(self, key):
-        obj = self.client.get_object(Bucket=self.bucket, Key=key)
+    def download_s3_file(self, key, bucket="cis-7000-usd-assets-versioned"):
+        obj = self.client.get_object(Bucket=bucket, Key=key)
         return obj['Body'].read()  # this returns bytes
     
-    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets", latest=True):
+    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-versioned", latest=True):
         resp = self.client.list_object_versions(Prefix=key, Bucket=bucket)
 
         for obj in [*resp['Versions'], *resp.get('DeleteMarkers', [])]:
@@ -56,7 +56,7 @@ class S3Manager:
             else:
                 pass # not implemented yet
         
-    def delete_object(self, key, bucket="cis-7000-usd-assets"):
+    def delete_object(self, key, bucket="cis-7000-usd-assets-versioned"):
         """PLEASE be confident before you use!"""
         self.client.delete_object(Bucket=bucket, Key=key)
 
