@@ -73,12 +73,6 @@ def validate_zip(request, asset_name):
             with zip_ref.open(file_info) as extracted_file:
                 with open(extracted_file_path, 'wb') as out_file:
                     out_file.write(extracted_file.read())
-        
-        if not os.path.exists(os.path.join(temp_dir, f"{asset_name}")):
-            return (False, "Error: Please make sure the zipped directory is named correctly (<ASSET_NAME>)")
-
-        if not os.path.isfile(os.path.join(temp_dir, f"{asset_name}/contrib/.thumbs/thumbnail.png")):
-            return (False, "Error: No `thumbnail.png` file exists at `<ASSET_NAME>/contrib/.thumbs/thumbnail.png`")
 
         result = (True, "") # S3 + MySQL changes need to be either or. Can't partially upload some files then fail
         # Run USD verification on extracted files
