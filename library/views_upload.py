@@ -8,6 +8,7 @@ from pxr import Usd
 import zipfile
 import tempfile
 from pathlib import Path
+import os
 
 from library.models import Asset, Author
 from library.serializers import (
@@ -43,7 +44,7 @@ def verify_asset(extracted_file, file_name, tmp_dir):
         print(f"General Exception: {e}")
         return (False, f"Unexpected error: {e}")
 
-def validate_zip(request):
+def validate_zip(request, asset_name):
     # TO DO: Find a way to cache this result so upload will grab results from verify
     zip = request.FILES.get('file')
 
@@ -53,6 +54,9 @@ def validate_zip(request):
     # Extract to a temporary directory
     with zipfile.ZipFile(zip) as zip_ref:
         temp_dir = Path(tempfile.mkdtemp())
+
+        if not os.path.isfile(os.path.join(temp_dir, f"{asset_name}/contrib/.thumbs/thumbnail.png")):
+            return (False, "Error: No `thumbnail.png` file exists at `<ASSET_NAME>/contrib/.thumbs/thumbnail.png`")
 
         # Extract all files to temp_dir while preserving folder structure
         for file_info in zip_ref.infolist():
@@ -101,7 +105,7 @@ def validate_zip(request):
 def get_verify(request, asset_name):
     try:
         print("you hit it")
-        result, error_msg = validate_zip(request)
+        result, error_msg = validate_zip(request, asset_name)
         if result:
             return Response({'success': True, 'message': "Passed validation!"}, status=200) 
         else:

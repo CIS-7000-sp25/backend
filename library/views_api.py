@@ -104,11 +104,7 @@ def get_assets(request):
                 # Check sublayers in-memory, no extra query
                 materials = bool(latest_commit.sublayers.all()) if latest_commit else False
 
-                # Generate the thumbnail URL if needed
-                thumbnail_url = (
-                    s3Manager.generate_presigned_url(asset.thumbnailKey)
-                    if asset.thumbnailKey else None
-                )
+                thumbnail_url = s3Manager.thumbnail_key_to_url(asset.thumbnailKey) if asset.thumbnailKey else None
 
                 assets_list.append({
                     'name': asset.assetName,
@@ -192,10 +188,8 @@ def get_asset(request, asset_name):
             latest_commit = None
 
         s3Manager = S3Manager()
-        thumbnail_url = (
-            s3Manager.generate_presigned_url(asset.thumbnailKey)
-            if asset.thumbnailKey else None
-        )
+
+        thumbnail_url = s3Manager.thumbnail_key_to_url(asset.thumbnailKey) if asset.thumbnailKey else None
 
         asset_data = {
             'name': asset.assetName,
