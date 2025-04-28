@@ -14,4 +14,4 @@ def check_no_invalid_references(stage, file_path, temp_dir):
             for ref in references.GetAddedOrExplicitItems():
                 ref_path = extraction_path / ref.assetPath.lstrip('./')
                 
-                assert ref_path.exists(), f"❌ Reference missing: {ref.assetPath} in {file_path}"
+                assert ref_path.exists(), f"Reference missing: {ref.assetPath} in {file_path}"

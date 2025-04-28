@@ -21,7 +21,7 @@ from library.usd_validation import (
     core, geometry, materials, references, structure
 )
 
-def verify_asset(extracted_file, file_name, tmp_dir):
+def verify_asset(extracted_file, file_name, tmp_dir, asset_name):
     try:
         # Write the in-memory file to a temporary file
         with tempfile.NamedTemporaryFile(suffix=".usd", delete=False) as tmp:
@@ -36,7 +36,7 @@ def verify_asset(extracted_file, file_name, tmp_dir):
         materials.check_usd_materials(stage, file_name)
         references.check_usd_references(stage, Path(file_name), tmp_dir)
         if Path(file_name).stem == Path(file_name).parents[0].name:
-            structure.check_usd_structure(stage, file_name, tmp_dir)
+            structure.check_usd_structure(stage, file_name, tmp_dir, asset_name)
 
         return (True, "No error")
     except AssertionError as ae:
@@ -52,6 +52,10 @@ def validate_zip(request, asset_name):
 
     if not zip or not zip.name.endswith('zip'):
         return (False, "Not a zip, or missing files")
+    
+    zip_stem = Path(zip.name).stem
+    if zip_stem != asset_name:
+        return (False, f"Error: Zip file name '{zip_stem}' does not match expected asset name '{asset_name}'")
 
     # Extract to a temporary directory
     with zipfile.ZipFile(zip) as zip_ref:
@@ -74,12 +78,6 @@ def validate_zip(request, asset_name):
             with zip_ref.open(file_info) as extracted_file:
                 with open(extracted_file_path, 'wb') as out_file:
                     out_file.write(extracted_file.read())
-        
-        if not os.path.exists(os.path.join(temp_dir, f"{asset_name}")):
-            return (False, "Error: Please make sure the zipped directory is named correctly (<ASSET_NAME>)")
-
-        if not os.path.isfile(os.path.join(temp_dir, f"{asset_name}/contrib/.thumbs/thumbnail.png")):
-            return (False, "Error: No `thumbnail.png` file exists at `<ASSET_NAME>/contrib/.thumbs/thumbnail.png`")
 
         result = (True, "") # S3 + MySQL changes need to be either or. Can't partially upload some files then fail
         # Run USD verification on extracted files
@@ -89,7 +87,7 @@ def validate_zip(request, asset_name):
 
             if file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda'):
                 with open(temp_dir / file_info.filename, 'rb') as extracted_file:
-                    fileResult = verify_asset(extracted_file, file_info.filename, temp_dir)
+                    fileResult = verify_asset(extracted_file, file_info.filename, temp_dir, asset_name)
 
                     newStatus: bool = result[0] and fileResult[0]
                     newMessage: str = result[1]
