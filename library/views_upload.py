@@ -51,6 +51,10 @@ def validate_zip(request, asset_name):
 
     if not zip or not zip.name.endswith('zip'):
         return (False, "Not a zip, or missing files")
+    
+    zip_stem = Path(zip.name).stem
+    if zip_stem != asset_name:
+        return (False, f"Error: Zip file name '{zip_stem}' does not match expected asset name '{asset_name}'")
 
     # Extract to a temporary directory
     with zipfile.ZipFile(zip) as zip_ref:
