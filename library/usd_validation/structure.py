@@ -3,12 +3,15 @@ from pathlib import Path
 def check_usd_structure(stage, file_name: str, temp_dir: Path):
     """Checks that the extracted asset has the expected folder and file structure."""
 
-    # Get the asset name (e.g., "campfire" from "campfire/campfire.usda")
     asset_name = Path(file_name).parts[0]
     base_path = temp_dir / asset_name
 
     if not base_path.exists():
         raise AssertionError(f"{base_path} does not exist.")
+
+    # zip_stem = Path(zip_path).stem
+    # if zip_stem != asset_name:
+    #     raise AssertionError(f"Zip file name '{zip_stem}' does not match asset folder '{asset_name}'")
 
     expected_structure = generate_expected_structure(asset_name)
     check_directory_structure(base_path, expected_structure)
@@ -39,37 +42,39 @@ def check_directory_structure(base_path: Path, expected_structure: dict, valid_e
 def generate_expected_structure(asset_name: str) -> dict:
     """Generate expected directory structure based on asset name (folder name)."""
     return {
-        f"{asset_name}": [],
-        "contrib": {
-            "geometry": {
-                "geometry.usda": [],
-                "bbox": {
-                    "geometry_bbox.usda": []
-                },
-                "LOD0": {
-                    "geometry_LOD0.usda": []
-                },
-                "LOD1": {
-                    "geometry_LOD1.usda": []
-                },
-                "LOD2": {
-                    "geometry_LOD2.usda": []
-                },
-            },
-            "material": {
-                "material.usda": [],
-                "default": {
-                    "material_default.usda": [],
-                    "texture": {
-                        "default.png": []
+        f"{asset_name}":{
+            f"{asset_name}": [],
+            "contrib": {
+                "geometry": {
+                    "geometry.usda": [],
+                    "bbox": {
+                        "geometry_bbox.usda": []
+                    },
+                    "LOD0": {
+                        "geometry_LOD0.usda": []
+                    },
+                    "LOD1": {
+                        "geometry_LOD1.usda": []
+                    },
+                    "LOD2": {
+                        "geometry_LOD2.usda": []
                     },
                 },
-            },
-            ".thumbs":{
-                "thumbnail.png": [],
-            },
-            ".cache": {
-                f"{asset_name}.glb": [],
+                "material": {
+                    "material.usda": [],
+                    "default": {
+                        "material_default.usda": [],
+                        "texture": {
+                            "default.png": []
+                        },
+                    },
+                },
+                ".thumbs":{
+                    "thumbnail.png": [],
+                },
+                ".cache": {
+                    f"{asset_name}.glb": [],
+                }
             }
         }
     }
