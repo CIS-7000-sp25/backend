@@ -1,6 +1,26 @@
 from pathlib import Path
 
-def check_usd_structure(stage, file_name: str, temp_dir: Path, name: str):
+def check_basic_structure(file_name: str, temp_dir: Path, name: str):
+    asset_name = Path(file_name).parts[0]
+    base_path = temp_dir / asset_name
+
+    if not base_path.exists():
+        raise AssertionError(f"{base_path} does not exist.")
+
+    if asset_name != name:
+        raise AssertionError(f"USD file name '{asset_name}' does not match expected asset name '{name}'.")
+
+    found = False
+    for ext in ('.usda', '.usd'):
+        usd_file = base_path / f"{asset_name}{ext}"
+        if usd_file.exists():
+            found = True
+            break
+
+    if not found:
+        raise AssertionError(f"Missing root-level file: expected '{asset_name}.usda' or '{asset_name}.usd' in {base_path}")
+
+def check_usd_structure(file_name: str, temp_dir: Path, name: str):
     """Checks that the extracted asset has the expected folder and file structure."""
 
     asset_name = Path(file_name).parts[0]
