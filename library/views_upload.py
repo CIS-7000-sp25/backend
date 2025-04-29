@@ -10,10 +10,9 @@ from pxr import Usd
 import zipfile
 import tempfile
 from pathlib import Path
-import os
 import json
 
-from library.models import Asset, Author, Keyword
+from library.models import Asset, Author, Sublayer
 from library.serializers import (
     CommitSerializer, AssetSerializer, UploadSerializer, CheckinSerializer, VerifySerializer, SuccessResponseSerializer, ErrorResponseSerializer
 )
@@ -180,6 +179,14 @@ def put_asset(request, asset_name):
             
             if commitSerializer.is_valid():
                 commit = commitSerializer.save()
+
+                # once everything passes, remove checked-out flags
+                asset.checkedOutBy = None
+                asset.save(update_fields=['checkedOutBy']) 
+
+                (Sublayer.objects
+                     .filter(asset=asset, checkedOutBy__isnull=False)
+                     .update(checkedOutBy=None))
 
                 return Response({'success': True, 'message': f"Successfully uploaded. Commit created: {commit}"}, status=200)
             else:
