@@ -318,10 +318,23 @@ def checkout_asset(request, asset_name):
         with transaction.atomic():  # row‑level lock scope
             # Fetch & lock the asset (opt ① + ② already in place)
             try:
-                asset = (Asset.objects
-                               .select_related('checkedOutBy')
-                               .select_for_update()
-                               .get(assetName=asset_name))
+
+                asset = (
+                    Asset.objects
+                        .select_related('checkedOutBy')
+                        .select_for_update()
+                        .prefetch_related(
+                            'keywordsList',
+                            Prefetch(
+                                'commits',
+                                queryset=Commit.objects
+                                                .select_related('author')
+                                                .prefetch_related('sublayers'),
+                                to_attr='all_commits'  # store them in memory under this attribute
+                            )
+                        )
+                        .get(assetName=asset_name)
+                )
             except Asset.DoesNotExist:
                 return Response({'error': 'Asset not found'}, status=404)
 
@@ -352,12 +365,44 @@ def checkout_asset(request, asset_name):
                      .filter(asset=asset, checkedOutBy__isnull=True)  # optimisation ④
                      .update(checkedOutBy=user))
 
+
+        # `asset.all_commits` is now a list of Commit objects in memory
+        all_commits = asset.all_commits
+
+        # Derive first and latest from that list
+        if all_commits:
+            first_commit = min(all_commits, key=lambda c: c.timestamp)
+            latest_commit = max(all_commits, key=lambda c: c.timestamp)
+        else:
+            first_commit = None
+            latest_commit = None
+
+        s3Manager = S3Manager()
+
+        thumbnail_url = s3Manager.thumbnail_key_to_url(asset.thumbnailKey) if asset.thumbnailKey else None
+
         return Response({
             'message': 'Asset and sublayers checked out successfully',
             'asset': {
                 'name': asset.assetName,
-                'checkedOutBy': request.user.username if request.user.is_authenticated else user.pennkey,
-                'isCheckedOut': True,
+                'thumbnailUrl': thumbnail_url,
+                'version': latest_commit.version if latest_commit else "01.00.00",
+                'creator': (
+                    f"{first_commit.author.firstName} {first_commit.author.lastName}"
+                    if first_commit and first_commit.author else "Unknown"
+                ),
+                'lastModifiedBy': (
+                    f"{latest_commit.author.firstName} {latest_commit.author.lastName}"
+                    if latest_commit and latest_commit.author else "Unknown"
+                ),
+                'checkedOutBy': asset.checkedOutBy.pennkey if asset.checkedOutBy else None,
+                'isCheckedOut': asset.checkedOutBy is not None,
+                # Because the commits & sublayers are already prefetched, no extra DB calls here
+                'materials': bool(latest_commit and latest_commit.sublayers.all()),
+                'keywords': [k.keyword for k in asset.keywordsList.all()],
+                'description': latest_commit.note if latest_commit else "No description available",
+                'createdAt': first_commit.timestamp.isoformat() if first_commit else None,
+                'updatedAt': latest_commit.timestamp.isoformat() if latest_commit else None,
             },
         })
 
