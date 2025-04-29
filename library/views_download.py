@@ -22,7 +22,6 @@ def download_asset_by_commit(request, asset_name, commit): # `commit`` is versio
     commitObj = get_object_or_404(Commit, asset=asset, version=commit)
 
     ZIP_PREFIX=f"{asset_name}_{commit}"
-    print(ZIP_PREFIX)
 
     zip_data = {}
     for sublayer in commitObj.sublayers.all():
@@ -35,6 +34,10 @@ def download_asset_by_commit(request, asset_name, commit): # `commit`` is versio
         
         zip_data[path_in_zip] = file_bytes
 
+    if not zip_data:
+        print("[DEBUG] No files downloaded from S3. Throwing...")
+        raise FileNotFoundError("This status is not available for this asset")
+    
     zip_buffer = zip_files_from_memory(zip_data)
 
     response = StreamingHttpResponse(zip_buffer, content_type='application/zip')
@@ -66,15 +69,16 @@ def download_asset_by_tag(request, asset_name, tag: str):
     for sl in commit.sublayers.all():
         sublayer: Sublayer = sl
         while True:
-            if sublayer.status == tagObj:
+            if sublayer.status.filter(statusTag=tagObj.statusTag).exists():
                 break
-            elif sublayer.prevVersion:
-                sublayer = sublayer.prevVersion
+            elif sublayer.previousVersion:
+                print("Previous version:", sublayer.previousVersion.version)
+                sublayer = sublayer.previousVersion
             else: # did not find a sublayer with the desired tag
                 sublayer = sl # set to original sublayer in case our desired tag is "latest"
                 break
 
-        if sublayer == sl and tagObj.statusTag != "latest": 
+        if sublayer.version == sl.version and tagObj.statusTag != "latest": 
             continue # this sublayer does not have the desired tag in its history. don't include in zip
 
         # continue with new found sublayer of desired tag
@@ -83,6 +87,10 @@ def download_asset_by_tag(request, asset_name, tag: str):
         path_in_zip = os.path.join(ZIP_PREFIX, truncated_key)
         
         zip_data[path_in_zip] = file_bytes
+
+    if not zip_data:
+        print("[DEBUG] No files downloaded from S3. Throwing...")
+        raise FileNotFoundError("This status is not available for this asset")
 
     zip_buffer = zip_files_from_memory(zip_data)
 
@@ -97,7 +105,7 @@ def _get_bytes_for_sublayer(s3: S3Manager, sublayer: Sublayer) -> tuple[str, byt
     s3_key = _sublayer_filepath[1]
 
     try:
-        file_bytes = s3.download_s3_file(key=s3_key, bucket=s3_bucket)
+        file_bytes = s3.download_s3_file(key=s3_key, bucket=s3_bucket, versionId=sublayer.s3_versionID)
     except Exception as e:
         raise SystemError(f"Error occured in downloading the file from S3: {e}")
     

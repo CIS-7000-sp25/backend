@@ -59,7 +59,7 @@ def asset_detail(request, asset_name):
 
 def download_asset_by_name(request, assetName):
     s3 = S3Manager()
-    prefix = f"{assetName}"
+    prefix = f"Assets/{assetName}/"
     
     keys = s3.list_s3_files(prefix)
     print(f"[DEBUG] S3 keys found for prefix '{prefix}':", keys)

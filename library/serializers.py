@@ -154,16 +154,11 @@ class CommitSerializer(serializers.ModelSerializer):
                 sublayer.save()
 
                 previousVersion = None
-                if self.latestCommitVersion != "":
-                    try:
-                        previousVersion = Sublayer.objects.get(asset=asset, filepath=filepath, version=self.latestCommitVersion)
-                        print(f"Sublayer has previous version: {previousVersion}")
-                    except Sublayer.DoesNotExist:
-                        try:
-                            previousVersion = Sublayer.objects.filter(asset=asset, filepath=filepath).order_by("-version")[0]
-                            print(f"Sublayer has previous version: {previousVersion}")
-                        except Exception:
-                            print("Sublayer does not have previous version.")
+                try:
+                    previousVersion = Sublayer.objects.filter(asset=asset, filepath=filepath).order_by("-version")[1]
+                    print(f"Sublayer has previous version: {previousVersion}, {previousVersion.filepath}, {previousVersion.version}")
+                except Exception as e:
+                    print("Sublayer does not have previous version.")
 
                 if previousVersion:
                     sublayer.previousVersion = previousVersion

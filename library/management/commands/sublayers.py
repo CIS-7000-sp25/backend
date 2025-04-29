@@ -10,7 +10,7 @@ from django.conf import settings
 DT_FMT="%m-%d-%Y %H:%M:%S%:z"
 
 ASSETS_2024 = ["carrot", "mug", "paniniPress", "sushi", "wineGlass", "kitchenaid", "oldTelevision", "penTablet", "flatTeapot", "woodenChair"]
-STATUS_TAGS = ["acquired", "approved", "standardized"]
+STATUS_TAGS = ["acquired", "approved", "standardized", "latest"]
 
 class Command(BaseCommand):
     help = """Easily refactor Sublayer objects in database."""
@@ -60,22 +60,22 @@ class Command(BaseCommand):
                 curr_status_list = []
                 if i == 3:
                     if asset.assetName not in ASSETS_2024:
-                        prefix = f"2025-assets-01.00.00/{asset.assetName}"
+                        prefix = f"2025-assets-01.00.00/{asset.assetName}/"
                         curr_status_list = ["acquired"]
                 elif i == 2:
                     if asset.assetName not in ASSETS_2024:
-                        prefix = f"2025-assets-02.00.00/{asset.assetName}"
+                        prefix = f"2025-assets-02.00.00/{asset.assetName}/"
                         # status_list is empty
                 elif i == 1:
                     if asset.assetName not in ASSETS_2024:
-                        prefix = f"2025-assets-03.00.00/{asset.assetName}"
+                        prefix = f"2025-assets-03.00.00/{asset.assetName}/"
                         # status_list is empty
                     else: # 2024 asset has this data
-                        prefix = f"2024-assets-acquisition/{asset.assetName}"
+                        prefix = f"2024-assets-acquisition/{asset.assetName}/"
                         curr_status_list = ["acquired"]
                 elif i == 0:
                     bucket = "cis-7000-usd-assets-versioned"
-                    prefix = f"Assets/{asset.assetName}"
+                    prefix = f"Assets/{asset.assetName}/"
                     curr_status_list = ["approved", "standardized"]
 
                 if prefix != "":

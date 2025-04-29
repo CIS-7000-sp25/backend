@@ -44,9 +44,16 @@ class S3Manager:
 
         return result
 
-    def download_s3_file(self, key, bucket="cis-7000-usd-assets-test"):
-        obj = self.client.get_object(Bucket=bucket, Key=key)
-        return obj['Body'].read()  # this returns bytes
+    def download_s3_file(self, key, bucket="cis-7000-usd-assets-test", versionId=None):
+        params = {
+            'Bucket': bucket,
+            'Key': key,
+        }
+        if versionId:
+            params['VersionId'] = versionId
+
+        obj = self.client.get_object(**params)
+        return obj['Body'].read()  # returns bytes
     
     def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-test", latest=True):
         resp = self.client.list_object_versions(Prefix=key, Bucket=bucket)
