@@ -108,7 +108,13 @@ def validate_zip(request, asset_name):
 @parser_classes([MultiPartParser])
 def get_verify(request, asset_name):
     try:
-        print("you hit it")
+        serializer = VerifySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({'success': False, 'message': "Input data invalid: " + json.dumps(serializer.errors)}, status=400)
+
+        isStrict = serializer.validated_data.get("isStrict")
+        print(f"QC isStrict = {isStrict}")
+
         result, error_msg = validate_zip(request, asset_name)
         if result:
             return Response({'success': True, 'message': "Passed validation!"}, status=200) 

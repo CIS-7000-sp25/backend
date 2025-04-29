@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from library.models import Asset, Commit, Sublayer, Keyword
 from library.utils.s3_utils import S3Manager
+from django.conf import settings
 from typing import List
 import zipfile
 import re
@@ -21,6 +22,7 @@ class ErrorResponseSerializer(serializers.Serializer):
 
 class VerifySerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
+    isStrict = serializers.BooleanField(required=True)
 
 class CheckinSerializer(serializers.Serializer):
     file = serializers.FileField(required=True)
@@ -54,7 +56,7 @@ class AssetSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         assetName = self.context.get("assetName")
-        thumbnailKey = f"cis-7000-usd-assets-versioned/Assets/{assetName}/contrib/.thumbs/thumbnail.png"
+        thumbnailKey = f"{settings.AWS_BUCKET_NAME}/Assets/{assetName}/contrib/.thumbs/thumbnail.png"
 
         asset = Asset(assetName=assetName, thumbnailKey=thumbnailKey, hasTexture=validated_data.get("hasTexture"))
         asset.save()
@@ -131,7 +133,7 @@ class CommitSerializer(serializers.ModelSerializer):
                 if file_info.filename.startswith("__MACOSX/") or file_info.filename.endswith(".DS_Store"):
                     continue
 
-                filepath = f"cis-7000-usd-assets-versioned/Assets/{file_info.filename}"
+                filepath = f"{settings.AWS_BUCKET_NAME}/Assets/{file_info.filename}"
                 sublayerName = filepath.rsplit("/", 1)[-1]
                 s3_versionID = ""
 
