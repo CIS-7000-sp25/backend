@@ -74,6 +74,12 @@ class AssetSerializer(serializers.ModelSerializer):
 
     def _handle_keywords(self, asset: Asset, validated_data):
         keywordsRawList = validated_data.pop('keywordsRawList', [])
+
+        if len(keywordsRawList) == 1 and "," in keywordsRawList[0]:
+            print("Keywords given as string rather than list of strings.")
+            keywordsRawList = keywordsRawList[0].split(",")
+            keywordsRawList = [k.strip() for k in keywordsRawList]
+
         for keyword in keywordsRawList:
             keyword_obj, created = Keyword.objects.get_or_create(keyword=keyword)
             asset.keywordsList.add(keyword_obj)
@@ -100,7 +106,7 @@ class CommitSerializer(serializers.ModelSerializer):
                 
     def create(self, validated_data):
         asset = self.context.get("asset")
-        version = "01.00.00" if self.context.get("isUpload") else validated_data.get("version")
+        version = validated_data.get("version")
         author = self.context.get("author")
         note = validated_data.get("note")
 
