@@ -1,6 +1,7 @@
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from django.db import transaction
 from drf_yasg.utils import swagger_auto_schema
@@ -130,6 +131,7 @@ def get_verify(request, asset_name):
 @swagger_auto_schema(method='post', request_body=UploadSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['POST'])
 @parser_classes([MultiPartParser])
+@permission_classes([IsAuthenticated])
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
@@ -142,7 +144,7 @@ def post_asset(request, asset_name):
 
             asset = asset_serializer.save()
 
-            author = get_object_or_404(Author, username=request.data.get("pennkey"))
+            author = get_object_or_404(Author, username=(request.user.username if request.user else request.data.get("pennkey")))
 
             commit_serializer = CommitSerializer(data=newData, context={"asset": asset, "author": author})
 
@@ -158,6 +160,7 @@ def post_asset(request, asset_name):
 @swagger_auto_schema(method='put', request_body=CheckinSerializer, consumes=["multipart/form-data"], responses={200: SuccessResponseSerializer, 400: ErrorResponseSerializer, 404: ErrorResponseSerializer, 500: ErrorResponseSerializer})
 @api_view(['PUT'])
 @parser_classes([MultiPartParser])
+@permission_classes([IsAuthenticated])
 def put_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
@@ -172,7 +175,7 @@ def put_asset(request, asset_name):
                     'message': "Input data invalid: " + json.dumps(asset_serializer.errors)
                 }, status=400)
             
-            author = get_object_or_404(Author, username=request.data.get("pennkey"))
+            author = get_object_or_404(Author, username=(request.user.username if request.user else request.data.get("pennkey")))
 
             commitSerializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
             

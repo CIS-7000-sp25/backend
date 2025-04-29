@@ -7,8 +7,9 @@ from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import BooleanField, Case, F, Max, Min, OuterRef, Prefetch, Q, Subquery, When
 from django.http import HttpResponse, StreamingHttpResponse
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
 
 from .models import Asset, Author, Commit, Keyword, Sublayer
 from .utils.s3_utils import S3Manager
@@ -242,6 +243,7 @@ def check_asset_exists(request, asset_name):
 
 
 @api_view(['PUT'])
+#@permission_classes([IsAuthenticated]) Commented to allow Houdini access
 def put_metadata(request, asset_name, new_version):
     try:
         db_asset = None
@@ -302,6 +304,7 @@ def put_metadata(request, asset_name, new_version):
 
 # TODO: This is a temporary endpoint for testing. Once we have a proper auth system, we should use that.
 @api_view(['POST'])
+#@permission_classes([IsAuthenticated]) Commented to allow Houdini access
 def checkout_asset(request, asset_name):
     # --- performance profiling --------------------------------
     start_time = time.perf_counter()
@@ -322,9 +325,9 @@ def checkout_asset(request, asset_name):
             except Asset.DoesNotExist:
                 return Response({'error': 'Asset not found'}, status=404)
 
-            pennkey = request.data.get('pennkey')
+            pennkey = request.user.username if request.user else request.data.get('pennkey')
             if not pennkey:
-                return Response({'error': 'pennkey is required'}, status=400)
+                return Response({'error': 'username after auth not found'}, status=400)
 
             # If already checked out → 400
             if asset.checkedOutBy:
@@ -333,13 +336,14 @@ def checkout_asset(request, asset_name):
                     {'error': f'Asset is already checked out by {who.firstName} {who.lastName}'},
                     status=400,
                 )
-
             # Fetch the user
             try:
                 user = Author.objects.get(username=pennkey)
             except Author.DoesNotExist:
                 return Response({'error': 'User not found'}, status=404)
-
+            
+            if request.user:
+                user = request.user
             # ---------- perform checkout ----------
             asset.checkedOutBy = user
             asset.save(update_fields=['checkedOutBy'])           # optimisation ③
@@ -352,7 +356,7 @@ def checkout_asset(request, asset_name):
             'message': 'Asset and sublayers checked out successfully',
             'asset': {
                 'name': asset.assetName,
-                'checkedOutBy': user.pennkey,
+                'checkedOutBy': request.user.username if request.user else user.pennkey,
                 'isCheckedOut': True,
             },
         })
