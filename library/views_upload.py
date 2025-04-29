@@ -125,14 +125,18 @@ def get_verify(request, asset_name):
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
-            asset_serializer = AssetSerializer(data=request.data, context={"assetName": asset_name, "isUpload": True})
+            newData = request.data
+            newData["version"] = "01.00.00" # version is always hardcoded to "01.00.00"
+
+            asset_serializer = AssetSerializer(data=newData, context={"assetName": asset_name, "isUpload": True})
             if not asset_serializer.is_valid():
                 return Response({'success': False, 'message': "Input data invalid: " + json.dumps(asset_serializer.errors)}, status=400)
 
             asset = asset_serializer.save()
 
             author = get_object_or_404(Author, username=request.data.get("pennkey"))
-            commit_serializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author})
+
+            commit_serializer = CommitSerializer(data=newData, context={"asset": asset, "author": author})
 
             if not commit_serializer.is_valid():
                 return Response({'success': False, 'message': "Input data invalid: " + json.dumps(commit_serializer.errors)}, status=400)
