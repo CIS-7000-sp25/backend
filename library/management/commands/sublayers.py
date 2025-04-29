@@ -5,6 +5,8 @@ from typing import List
 import click
 import os
 
+from django.conf import settings
+
 DT_FMT="%m-%d-%Y %H:%M:%S%:z"
 
 ASSETS_2024 = ["carrot", "mug", "paniniPress", "sushi", "wineGlass", "kitchenaid", "oldTelevision", "penTablet", "flatTeapot", "woodenChair"]
@@ -16,6 +18,12 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         print(options)
 
+        if click.confirm(f"Resetting sublayers for latest commit. Continue?"):
+            self.resetMostRecentSublayers()
+        if click.confirm(f"Resetting thumbnail paths. Continue?"):
+            self.resetAllThumbnailKeys()
+        if click.confirm(f"Clearing S3 bucket. Are you sure you want to continue?"):
+            self.clearS3Bucket()
         if click.confirm("Clearing existing Sublayer objects with outdated column data from database. Continue?"):
             self.clearOldSublayers()
         if click.confirm(f"Creating all StatusTag objects. In the future, options will be {STATUS_TAGS}. Continue?"):
@@ -122,6 +130,88 @@ class Command(BaseCommand):
                 for sublayer in commit.sublayers.all():
                     
                     print(f"        {sublayer} ({sublayer.filepath})") if len(sublayer.filepath) < 70 else print(f"        {sublayer} (...{sublayer.filepath[-70:]})")
+    
+    def resetMostRecentSublayers(self):
+        s3 = S3Manager()
+
+        for asset in Asset.objects.all():
+
+            asset.thumbnailKey = f"{settings.AWS_BUCKET_NAME}/Assets/{asset.assetName}/contrib/.thumbs"
+            asset.save()
+
+            for i, commit in enumerate(Commit.objects.filter(asset=asset).order_by("-version")[:1]):
+
+                commit.sublayers.clear()
+
+                commit_sublayers: List[Sublayer] = []
+
+                bucket = "usd-asset-versions-dump"
+                prefix = ""
+                curr_status_list = []
+
+                if i == 0:
+                    bucket = settings.AWS_BUCKET_NAME
+                    prefix = f"Assets/{asset.assetName}/"
+                    curr_status_list = ["approved", "standardized"]
+
+                if prefix != "":
+                    s3_filepaths = s3.list_s3_files(prefix, bucket)
+
+                    for filepath in s3_filepaths:
+                        sl_sublayerName = filepath.rsplit('/', 1)[-1]
+                        
+                        if (sl_sublayerName == ".DS_Store" or sl_sublayerName.startswith("__MACOSX/")): # Death to all .DS_Store!!
+                            s3.delete_object(filepath, bucket)
+                            continue
+
+                        sl_filepath = os.path.join(bucket, filepath)
+                        sl_s3_versionID = s3.get_s3_versionID(key=filepath, bucket=bucket, latest=True)
+                        sl_version = commit.version
+
+                        sublayer = Sublayer(sublayerName=sl_sublayerName, 
+                                            filepath=sl_filepath, 
+                                            s3_versionID=sl_s3_versionID,
+                                            version=sl_version,
+                                            asset=asset)
+                        
+                        print(f"Creating sublayer... {sublayer} - {sublayer.version}")
+                        sublayer.save()
+                        
+                        if len(curr_status_list) != 0:
+                            sl_status = []
+                            for s in curr_status_list:
+                                status_obj = StatusTag.objects.get(statusTag=s)
+                                if status_obj:
+                                    sl_status.append(status_obj)
+                                else:
+                                    raise Exception(f"StatusTag {s} expected but not found.")
+                                
+                            sublayer.status.set(sl_status)
+                            sublayer.save()
+
+                        commit_sublayers.append(sublayer)
+
+                    commit.sublayers.set(commit_sublayers)
+                    commit.save()
+                    print(f"Setting sublayers for {asset.assetName} commit {commit.version}...")
+                    print(f"It now contains:")
+                    for sublayer in commit.sublayers.all():
+                        print(f"    {sublayer.sublayerName}")
+
+    def resetAllThumbnailKeys(self):
+        for asset in Asset.objects.all():
+
+            asset.thumbnailKey = f"{settings.AWS_BUCKET_NAME}/Assets/{asset.assetName}/contrib/.thumbs/thumbnail.png"
+            print(asset.thumbnailKey)
+            asset.save()
+
+    def clearS3Bucket(self):
+        s3 = S3Manager()
+
+        l = s3.list_s3_files(prefix="", bucket=settings.AWS_BUCKET_NAME)
+
+        for obj in l:
+            s3.delete_object(obj,bucket=settings.AWS_BUCKET_NAME)
                 
     suppressed_base_arguments = ["--version", "--verbosity", "--settings", "--pythonpath", "--traceback", "--no-color", "--force-color", "--skip-checks"]
 
