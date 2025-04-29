@@ -68,8 +68,10 @@ def download_asset_by_tag(request, asset_name, tag: str):
     zip_data = {}
     for sl in commit.sublayers.all():
         sublayer: Sublayer = sl
+        statusFoundForSublayer = False
         while True:
             if sublayer.status.filter(statusTag=tagObj.statusTag).exists():
+                statusFoundForSublayer = True
                 break
             elif sublayer.previousVersion:
                 print("Previous version:", sublayer.previousVersion.version)
@@ -78,7 +80,7 @@ def download_asset_by_tag(request, asset_name, tag: str):
                 sublayer = sl # set to original sublayer in case our desired tag is "latest"
                 break
 
-        if sublayer.version == sl.version and tagObj.statusTag != "latest": 
+        if not statusFoundForSublayer: 
             continue # this sublayer does not have the desired tag in its history. don't include in zip
 
         # continue with new found sublayer of desired tag
