@@ -325,7 +325,7 @@ def checkout_asset(request, asset_name):
             except Asset.DoesNotExist:
                 return Response({'error': 'Asset not found'}, status=404)
 
-            pennkey = request.user.username if request.user else request.data.get('pennkey')
+            pennkey = request.user.username if request.user.is_authenticated else request.data.get('pennkey')
             if not pennkey:
                 return Response({'error': 'username after auth not found'}, status=400)
 
@@ -342,7 +342,7 @@ def checkout_asset(request, asset_name):
             except Author.DoesNotExist:
                 return Response({'error': 'User not found'}, status=404)
             
-            if request.user:
+            if request.user.is_authenticated:
                 user = request.user
             # ---------- perform checkout ----------
             asset.checkedOutBy = user
@@ -356,7 +356,7 @@ def checkout_asset(request, asset_name):
             'message': 'Asset and sublayers checked out successfully',
             'asset': {
                 'name': asset.assetName,
-                'checkedOutBy': request.user.username if request.user else user.pennkey,
+                'checkedOutBy': request.user.username if request.user.is_authenticated else user.pennkey,
                 'isCheckedOut': True,
             },
         })

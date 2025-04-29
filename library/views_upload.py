@@ -143,7 +143,7 @@ def post_asset(request, asset_name):
 
             asset = asset_serializer.save()
 
-            author = get_object_or_404(Author, username=(request.user.username if request.user else request.data.get("pennkey")))
+            author = get_object_or_404(Author, username=(request.user.username if request.user.is_authenticated else request.data.get("pennkey")))
 
             commit_serializer = CommitSerializer(data=newData, context={"asset": asset, "author": author})
 
@@ -174,7 +174,7 @@ def put_asset(request, asset_name):
                     'message': "Input data invalid: " + json.dumps(asset_serializer.errors)
                 }, status=400)
             
-            author = get_object_or_404(Author, username=(request.user.username if request.user else request.data.get("pennkey")))
+            author = get_object_or_404(Author, username=(request.user.username if request.user.is_authenticated else request.data.get("pennkey")))
 
             commitSerializer = CommitSerializer(data=request.data, context={"asset": asset, "author": author, "isUpload": False})
             
