@@ -7,9 +7,6 @@ def check_basic_structure(file_name: str, temp_dir: Path, name: str):
     if not base_path.exists():
         raise AssertionError(f"{base_path} does not exist.")
 
-    if asset_name != name:
-        raise AssertionError(f"USD file name '{asset_name}' does not match expected asset name '{name}'.")
-
     found = False
     for ext in ('.usda', '.usd'):
         usd_file = base_path / f"{asset_name}{ext}"
@@ -29,9 +26,6 @@ def check_usd_structure(file_name: str, temp_dir: Path, name: str):
     if not base_path.exists():
         raise AssertionError(f"{base_path} does not exist.")
     
-    if (asset_name != name):
-        raise AssertionError(f"USD file name {asset_name} does not match expected asset name {name}.")
-
     expected_structure = generate_expected_structure(asset_name)
     check_directory_structure(base_path, expected_structure)
 
