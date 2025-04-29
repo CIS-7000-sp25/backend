@@ -474,7 +474,7 @@ def download_glb(request, asset_name):
         Asset.objects.get(assetName=asset_name)
 
         s3 = S3Manager()
-        prefix = f"Assets/{asset_name}/"
+        prefix = f"Assets/{asset_name}"
         keys = s3.list_s3_files(prefix)
 
         if not keys:
