@@ -56,7 +56,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "library",
-    'silk',
+    # 'silk',
     "drf_yasg",
     "whitenoise.runserver_nostatic", 
 ]

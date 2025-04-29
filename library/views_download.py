@@ -80,7 +80,7 @@ def download_asset_by_tag(request, asset_name, tag: str):
                 sublayer = sl # set to original sublayer in case our desired tag is "latest"
                 break
 
-        if not statusFoundForSublayer: 
+        if not statusFoundForSublayer and tag != "latest": 
             continue # this sublayer does not have the desired tag in its history. don't include in zip
 
         # continue with new found sublayer of desired tag
