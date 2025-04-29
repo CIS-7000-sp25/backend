@@ -33,6 +33,7 @@ urlpatterns = [
     path('api/commits/<str:commit_id>/', views_api.get_commit, name='get_commit'),
     path('api/users/', views_api.get_users, name='get_users'),
     path('api/users/<str:pennkey>/', views_api.get_user, name='get_user'),
+    path('api/currentUser/', views_api.get_me, name="get_me"),
     
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

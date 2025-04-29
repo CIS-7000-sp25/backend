@@ -683,3 +683,15 @@ def get_user(request, pennkey):
             f"and used {queries_used} DB queries."
         )
     
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_me(request):
+    if request.user.is_authenticated:
+        return Response({
+            'pennkey': request.user.username,
+            'firstName': request.user.firstName,
+            'lastName': request.user.lastName,
+        }, status=200)
+    else:
+        return Response({'error': "Not Authenticated"}, status=401)
