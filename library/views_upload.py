@@ -70,7 +70,7 @@ def validate_zip(request, asset_name, isStrict):
             extracted_file_path = temp_dir / file_info.filename
             
             # If the file is a directory, just make sure it exists
-            if file_info.is_dir():
+            if file_info.is_dir() and not file_info.filename.startswith("__MACOSX/"):
                 extracted_file_path.mkdir(parents=True, exist_ok=True)
                 continue
             
@@ -87,6 +87,9 @@ def validate_zip(request, asset_name, isStrict):
         for file_info in zip_ref.infolist():
             if file_info.is_dir():
                 continue
+
+            if file_info.filename.startswith("__MACOSX/") or file_info.filename.endswith(".DS_Store"):
+                    continue
 
             if file_info.filename.endswith('.usd') or file_info.filename.endswith('.usda'):
                 with open(temp_dir / file_info.filename, 'rb') as extracted_file:
@@ -133,6 +136,9 @@ def get_verify(request, asset_name):
 def post_asset(request, asset_name):
     try:
         with transaction.atomic():  # whole asset + commit flow in one transaction
+            if Asset.objects.filter(assetName=asset_name).exists():
+                return Response({'success': False, 'message': f"Asset '{asset_name}' already exists."}, status=400)
+
             newData = request.data
             newData["version"] = "01.00.00" # version is always hardcoded to "01.00.00"
 

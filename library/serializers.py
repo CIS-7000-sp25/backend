@@ -5,6 +5,7 @@ from django.conf import settings
 from typing import List
 import zipfile
 import re
+from django.db import transaction
 
 
 # Response serializers
@@ -83,7 +84,7 @@ class AssetSerializer(serializers.ModelSerializer):
             keywordsRawList = [k.strip() for k in keywordsRawList]
 
         for keyword in keywordsRawList:
-            keyword_obj, created = Keyword.objects.get_or_create(keyword=keyword)
+            keyword_obj, created = Keyword.objects.get_or_create(keyword=keyword.strip().lower())
             asset.keywordsList.add(keyword_obj)
             print(f"Keyword: {keyword}, was created: {created}")
 
@@ -123,6 +124,7 @@ class CommitSerializer(serializers.ModelSerializer):
 
         return commit
     
+    @transaction.atomic
     def _create_sublayers(self, asset: Asset, version, zip):
         sublayers: List[Sublayer] = []
         with zipfile.ZipFile(zip) as zip_ref:
@@ -153,16 +155,19 @@ class CommitSerializer(serializers.ModelSerializer):
                 sublayer = Sublayer(asset=asset, version=version, filepath=filepath, sublayerName=sublayerName, s3_versionID=s3_versionID)
                 sublayer.save()
 
-                previousVersion = None
-                try:
-                    previousVersion = Sublayer.objects.filter(asset=asset, filepath=filepath).order_by("-version")[1]
-                    print(f"Sublayer has previous version: {previousVersion}, {previousVersion.filepath}, {previousVersion.version}")
-                except Exception as e:
-                    print("Sublayer does not have previous version.")
-
+                previousVersion = (
+                    Sublayer.objects
+                    .filter(asset=asset, filepath=filepath)
+                    .exclude(version=version)
+                    .order_by("-version")
+                    .first()
+                )
                 if previousVersion:
+                    print(f"Sublayer has previous version: {previousVersion}, {previousVersion.filepath}, {previousVersion.version}")
                     sublayer.previousVersion = previousVersion
                     sublayer.save()
+                else:
+                    print("Sublayer does not have previous version.")
 
                 sublayers.append(sublayer)
 
