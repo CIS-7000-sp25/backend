@@ -26,7 +26,7 @@
    AWS_ACCESS_KEY_ID=your-access-key-id
    AWS_SECRET_ACCESS_KEY=your-secret-access-key
    AWS_REGION=us-east-1
-   AWS_BUCKET_NAME=cis-7000-usd-assets-versioned
+   AWS_BUCKET_NAME=cis-7000-usd-assets-test
    ```
 
    Reach out to Jacky Park if you need these credentials.

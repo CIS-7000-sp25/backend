@@ -12,18 +12,18 @@ class S3Manager:
         self.bucket = settings.AWS_BUCKET_NAME
         self.resource = boto3.resource('s3')
 
-    def generate_presigned_url(self, key, bucket="cis-7000-usd-assets-versioned", expires_in=60):
+    def generate_presigned_url(self, key, bucket="cis-7000-usd-assets-test", expires_in=60):
         return self.client.generate_presigned_url(
             'get_object',
             Params={'Bucket': bucket, 'Key': key}, # relative path to bucket
             ExpiresIn=expires_in
         )
     
-    def update_file(self, file, key, bucket="cis-7000-usd-assets-versioned"):
+    def update_file(self, file, key, bucket="cis-7000-usd-assets-test"):
         """Better for small objects. Returns response which contains versionID as response.get('VersionId)"""
         return self.client.put_object(Body=file, Bucket=bucket, Key=key)
 
-    def upload_fileobj(self, file, key, bucket="cis-7000-usd-assets-versioned") -> str:
+    def upload_fileobj(self, file, key, bucket="cis-7000-usd-assets-test") -> str:
         """Better for large objects. Returns response using `head_object` which contains versionID as response.get('VersionId)"""
 
         self.client.upload_fileobj(file, bucket, key)
@@ -34,7 +34,7 @@ class S3Manager:
     def delete_file(self, key, bucket):
         self.client.delete_object(Bucket=bucket, Key=key)
 
-    def list_s3_files(self, prefix, bucket="cis-7000-usd-assets-versioned"):
+    def list_s3_files(self, prefix, bucket="cis-7000-usd-assets-test"):
         paginator = self.client.get_paginator('list_objects_v2')
         result = []
 
@@ -44,11 +44,11 @@ class S3Manager:
 
         return result
 
-    def download_s3_file(self, key, bucket="cis-7000-usd-assets-versioned"):
+    def download_s3_file(self, key, bucket="cis-7000-usd-assets-test"):
         obj = self.client.get_object(Bucket=bucket, Key=key)
         return obj['Body'].read()  # this returns bytes
     
-    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-versioned", latest=True):
+    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-test", latest=True):
         resp = self.client.list_object_versions(Prefix=key, Bucket=bucket)
 
         for obj in [*resp['Versions'], *resp.get('DeleteMarkers', [])]:
@@ -56,7 +56,7 @@ class S3Manager:
                 if obj['IsLatest']:
                     return obj['VersionId']
         
-    def delete_object(self, key, bucket="cis-7000-usd-assets-versioned"):
+    def delete_object(self, key, bucket="cis-7000-usd-assets-test"):
         """PLEASE be confident before you use!"""
         self.client.delete_object(Bucket=bucket, Key=key)
 
