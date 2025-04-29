@@ -423,13 +423,13 @@ def download_glb(request, asset_name):
         Asset.objects.get(assetName=asset_name)
 
         s3 = S3Manager()
-        prefix = f"{asset_name}"
+        prefix = f"Assets/{asset_name}"
         keys = s3.list_s3_files(prefix)
 
         if not keys:
-            return Response({'error': 'No files found for this asset'}, status=404)
+            return Response({'error': 'Asset not found'}, status=404)
         
-        glb_file_path = f"{prefix}/{asset_name}.glb"
+        glb_file_path = f"{prefix}/contrib/.cache/{asset_name}.glb"
 
         if keys.count(glb_file_path) == 0:
             return Response({'error': 'No .glb file found for this asset'}, status=404)
