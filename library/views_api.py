@@ -28,7 +28,7 @@ def get_assets(request):
         # Get query parameters
         search = request.GET.get('search')
         author = request.GET.get('author')
-        checked_in_only = request.GET.get('checkedInOnly') == 'true'
+        asset_status = request.GET.get('assetStatus')
         sort_by = request.GET.get('sortBy', 'updated')
 
         # Base queryset
@@ -57,9 +57,11 @@ def get_assets(request):
                 Q(keywordsList__keyword__icontains=search)
             ).distinct()
 
-        # Apply checked-in filter
-        if checked_in_only:
+        # Apply asset status filter if selected
+        if asset_status == 'check-in':
             assets = assets.filter(checkedOutBy__isnull=True)
+        elif asset_status == 'check-out':
+            assets = assets.filter(checkedOutBy__isnull=False)
 
         # Apply author filter
         if author:
