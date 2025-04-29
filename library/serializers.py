@@ -7,6 +7,9 @@ import zipfile
 import re
 from django.db import transaction
 
+from PIL import Image
+from io import BytesIO
+
 
 # Response serializers
 
@@ -144,6 +147,9 @@ class CommitSerializer(serializers.ModelSerializer):
                     _bucket = _splitFilepath[0]
                     _key = _splitFilepath[1]
 
+                    if "/.thumbs/" in file_info.filename.lower():
+                        extracted_file = self._resize_thumbnail(extracted_file, file_info.filename)
+
                     response = self.s3.upload_fileobj(
                         extracted_file, 
                         _key,
@@ -193,6 +199,25 @@ class CommitSerializer(serializers.ModelSerializer):
     def _version_to_tuple(self, version_str):
         """e.g. 04.00.01" -> (4, 0, 1)"""
         return tuple(int(part) for part in version_str.split('.'))
+    
+    def _resize_thumbnail(self, file_obj, filename):
+        """Resize image if it is a thumbnail (filename contains '.thumbs')."""
+        try:
+            image = Image.open(file_obj)
+            image.thumbnail((400, 400))
+
+            # Save resized image to BytesIO
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            buffer.seek(0)
+
+            print(f"[DEBUG] Resized thumbnail: {filename}")
+            return buffer
+        except Exception as e:
+            print(f"[ERROR] Failed to resize thumbnail {filename}: {e}")
+            file_obj.seek(0)
+            return file_obj
+
     
 # Used in views_info.py
 
