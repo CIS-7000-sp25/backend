@@ -31,9 +31,8 @@ def verify_asset(extracted_file, file_name, tmp_dir, asset_name, isStrict):
             tmp.flush()
             tmp_filename = tmp.name
 
-        stage = Usd.Stage.Open(tmp_filename)
-
         if (isStrict):
+            stage = Usd.Stage.Open(tmp_filename)
             core.check_usd_properties(stage, file_name)
             geometry.check_usd_geometry(stage, file_name)
             materials.check_usd_materials(stage, file_name)
