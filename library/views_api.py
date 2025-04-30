@@ -46,6 +46,9 @@ def get_assets(request):
             first_author_last  = Subquery(
                 earliest_commit.values('author__lastName')[:1]
             ),
+            first_author_username  = Subquery(
+                earliest_commit.values('author__username')[:1]
+            ),
             first_ts  = Subquery(earliest_commit.values('timestamp')[:1]),
             latest_ts = Subquery(latest_commit.values('timestamp')[:1]),
         )
@@ -68,7 +71,8 @@ def get_assets(request):
             for token in author.split():
                 assets = assets.filter(
                     Q(first_author_first__icontains=token) |
-                    Q(first_author_last__icontains=token)
+                    Q(first_author_last__icontains=token) |
+                    Q(first_author_username__icontains=token)
                 )
 
         # Apply sorting

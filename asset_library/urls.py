@@ -24,6 +24,8 @@ from drf_yasg import openapi
 from django.urls import re_path
 import os
 
+print(settings.AWS_BUCKET_NAME)
+
 swagger_url = settings.DYNAMIC_BASE_URL
 
 schema_view = get_schema_view(
