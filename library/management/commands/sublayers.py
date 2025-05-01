@@ -89,7 +89,7 @@ class Command(BaseCommand):
                             continue
 
                         sl_filepath = os.path.join(bucket, filepath)
-                        sl_s3_versionID = s3.get_s3_versionID(key=filepath, bucket=bucket, latest=True)
+                        sl_s3_versionID = s3.get_s3_versionID(key=filepath, bucket=bucket, n=1)
                         sl_version = commit.version
 
                         sublayer = Sublayer(sublayerName=sl_sublayerName, 
