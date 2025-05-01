@@ -15,6 +15,10 @@ run:
 npm-dev:
 	npm --prefix=./asset_library run dev
 
+# Have mysql user, password and host set as defaults
+dump:
+	mysqldump --order-by-primary --skip-extended-insert --no-tablespaces --single-transaction railway > assets_backup.sql
+
 # env-up:
 # 	pyenv activate usd-asset-library; \
 

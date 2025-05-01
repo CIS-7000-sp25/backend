@@ -54,14 +54,34 @@ class S3Manager:
 
         obj = self.client.get_object(**params)
         return obj['Body'].read()  # returns bytes
-    
-    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-test", latest=True):
+
+    def get_s3_versionID(self, key, bucket="cis-7000-usd-assets-test", n=1):
+        """
+        excluding any versions that came before the most recent delete marker.
+        """
         resp = self.client.list_object_versions(Prefix=key, Bucket=bucket)
 
-        for obj in [*resp['Versions'], *resp.get('DeleteMarkers', [])]:
-            if latest:
-                if obj['IsLatest']:
-                    return obj['VersionId']
+        # get versions and delete markers for this key
+        versions = [v for v in resp.get('Versions', []) if v['Key'] == key]
+        delete_markers = [d for d in resp.get('DeleteMarkers', []) if d['Key'] == key]
+
+        # find the latest delete marker timestamp (if any)
+        latest_delete_time = None
+        if delete_markers:
+            latest_delete_time = max(d['LastModified'] for d in delete_markers)
+
+        # filter out versions older than the latest delete marker
+        if latest_delete_time:
+            versions = [v for v in versions if v['LastModified'] > latest_delete_time]
+
+        # sort by LastModified descending (most recent first)
+        versions.sort(key=lambda v: v['LastModified'], reverse=True)
+
+        if n <= len(versions):
+            return versions[n - 1]['VersionId']
+        else:
+            raise IndexError(f"Only {len(versions)} versions found after latest delete marker for key '{key}'; cannot get version #{n}")
+
         
     def delete_object(self, key, bucket="cis-7000-usd-assets-test"):
         """PLEASE be confident before you use!"""

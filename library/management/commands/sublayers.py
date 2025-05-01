@@ -135,68 +135,30 @@ class Command(BaseCommand):
         s3 = S3Manager()
 
         for asset in Asset.objects.all():
+            for i, sublayer in enumerate(Sublayer.objects.filter(asset=asset).order_by("-version")):
+                n = -1
+                all_sl_versions = Sublayer.objects.filter(filepath=sublayer.filepath).order_by("-version")
+                if not all_sl_versions:
+                    continue
+                for j, sl in enumerate(all_sl_versions):
+                    if sl == sublayer:
+                        n = j
+                        break
 
-            asset.thumbnailKey = f"{settings.AWS_BUCKET_NAME}/Assets/{asset.assetName}/contrib/.thumbs"
-            asset.save()
+                bucket = sublayer.filepath.split("/", 1)[0]
 
-            for i, commit in enumerate(Commit.objects.filter(asset=asset).order_by("-version")[:1]):
+                s3_filepath = sublayer.filepath.split("/", 1)[1]
+                s3_versionID = s3.get_s3_versionID(key=s3_filepath, bucket=bucket, n=n+1)
 
-                commit.sublayers.clear()
+                sl_s3_versionID = sublayer.s3_versionID
+                if s3_versionID == sl_s3_versionID:
+                    continue
 
-                commit_sublayers: List[Sublayer] = []
+                sublayer.s3_versionID = s3_versionID
 
-                bucket = "usd-asset-versions-dump"
-                prefix = ""
-                curr_status_list = []
-
-                if i == 0:
-                    bucket = settings.AWS_BUCKET_NAME
-                    prefix = f"Assets/{asset.assetName}/"
-                    curr_status_list = ["approved", "standardized"]
-
-                if prefix != "":
-                    s3_filepaths = s3.list_s3_files(prefix, bucket)
-
-                    for filepath in s3_filepaths:
-                        sl_sublayerName = filepath.rsplit('/', 1)[-1]
-                        
-                        if (sl_sublayerName == ".DS_Store" or sl_sublayerName.startswith("__MACOSX/")): # Death to all .DS_Store!!
-                            s3.delete_object(filepath, bucket)
-                            continue
-
-                        sl_filepath = os.path.join(bucket, filepath)
-                        sl_s3_versionID = s3.get_s3_versionID(key=filepath, bucket=bucket, latest=True)
-                        sl_version = commit.version
-
-                        sublayer = Sublayer(sublayerName=sl_sublayerName, 
-                                            filepath=sl_filepath, 
-                                            s3_versionID=sl_s3_versionID,
-                                            version=sl_version,
-                                            asset=asset)
-                        
-                        print(f"Creating sublayer... {sublayer} - {sublayer.version}")
-                        sublayer.save()
-                        
-                        if len(curr_status_list) != 0:
-                            sl_status = []
-                            for s in curr_status_list:
-                                status_obj = StatusTag.objects.get(statusTag=s)
-                                if status_obj:
-                                    sl_status.append(status_obj)
-                                else:
-                                    raise Exception(f"StatusTag {s} expected but not found.")
-                                
-                            sublayer.status.set(sl_status)
-                            sublayer.save()
-
-                        commit_sublayers.append(sublayer)
-
-                    commit.sublayers.set(commit_sublayers)
-                    commit.save()
-                    print(f"Setting sublayers for {asset.assetName} commit {commit.version}...")
-                    print(f"It now contains:")
-                    for sublayer in commit.sublayers.all():
-                        print(f"    {sublayer.sublayerName}")
+                print(sublayer.filepath)
+                print(f"Sublayer {sublayer} {sublayer.version} s3 versionID updated. Old: {sl_s3_versionID}, New: {s3_versionID}")
+                # sublayer.save()
 
     def resetAllThumbnailKeys(self):
         for asset in Asset.objects.all():
